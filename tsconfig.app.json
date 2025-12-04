@@ -24,7 +24,7 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true,
 
-    /* === Aggiungi da qui in giù === */
+    /* Alias IMPORTANTI */
     "baseUrl": "./",
     "paths": {
       "@core/*": ["src/core/*"],
