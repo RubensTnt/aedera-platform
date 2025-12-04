@@ -26,10 +26,29 @@ export function initAederaViewer(container: HTMLDivElement): AederaViewerContext
     OBC.SimpleRenderer
   >();
 
-  // Associa i componenti al mondo (ordine come nell’esempio ufficiale)
+  // Associa i componenti al mondo
   world.scene = new OBC.SimpleScene(components);
   world.renderer = new OBC.SimpleRenderer(components, container);
   world.camera = new OBC.SimpleCamera(components);
+
+  // === FragmentsManager: inizializzazione obbligatoria per IfcLoader ===
+  const fragments = components.get(OBC.FragmentsManager);
+
+  // Worker locale servito da Vite (public/thatopen-worker/worker.mjs)
+  const workerUrl = "/thatopen-worker/worker.mjs";
+  fragments.init(workerUrl);
+
+  // Quando la camera "si ferma", aggiorna il core dei fragments
+  world.camera.controls.addEventListener("rest", () => {
+    fragments.core.update(true);
+  });
+
+  // Quando un nuovo modello Fragments viene caricato, collegalo a camera + scena
+  fragments.list.onItemSet.add(({ value: model }) => {
+    model.useCamera(world.camera.three);
+    world.scene.three.add(model.object);
+    fragments.core.update(true);
+  });
 
   // Avvia il loop di rendering di Components
   components.init();
@@ -49,7 +68,7 @@ export function initAederaViewer(container: HTMLDivElement): AederaViewerContext
   light.position.set(10, 20, 10);
   world.scene.three.add(light);
 
-  // Setup della scena (come da docs)
+  // Setup della scena
   (world.scene as OBC.SimpleScene).setup();
 
   // Posizioniamo la camera
