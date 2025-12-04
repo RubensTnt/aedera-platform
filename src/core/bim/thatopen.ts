@@ -1,7 +1,7 @@
 // src/core/bim/thatopen.ts
 
-import * as OBC from "@thatopen/components";
 import * as THREE from "three";
+import * as OBC from "@thatopen/components";
 
 export interface AederaViewerContext {
   components: OBC.Components;
@@ -10,59 +10,50 @@ export interface AederaViewerContext {
 
 let viewerContext: AederaViewerContext | null = null;
 
-export async function initAederaViewer(
-  container: HTMLDivElement,
-): Promise<AederaViewerContext> {
-  // Evita doppia inizializzazione
+export function initAederaViewer(container: HTMLDivElement): AederaViewerContext {
+  // Evita di inizializzare più volte se il componente React viene rimontato
   if (viewerContext) return viewerContext;
 
   const components = new OBC.Components();
 
-  // Worlds manager
+  // Manager dei mondi
   const worlds = components.get(OBC.Worlds);
 
-  // Creiamo un SimpleWorld tipizzato
+  // Crea il mondo semplice tipizzato (scene+camera+renderer)
   const world = worlds.create<
     OBC.SimpleScene,
     OBC.SimpleCamera,
     OBC.SimpleRenderer
   >();
-  world.name = "main";
 
-  // Scene
-  const sceneComponent = new OBC.SimpleScene(components);
-  sceneComponent.setup();
-  sceneComponent.three.background = new THREE.Color(0x151515);
-  world.scene = sceneComponent;
+  // Associa i componenti al mondo (ordine come nell’esempio ufficiale)
+  world.scene = new OBC.SimpleScene(components);
+  world.renderer = new OBC.SimpleRenderer(components, container);
+  world.camera = new OBC.SimpleCamera(components);
 
-  // Renderer legato al container React
-  const rendererComponent = new OBC.SimpleRenderer(components, container);
-  world.renderer = rendererComponent;
+  // Avvia il loop di rendering di Components
+  components.init();
 
-  // Camera
-  const cameraComponent = new OBC.SimpleCamera(components);
-  world.camera = cameraComponent;
-
-  // Griglia
+  // Griglia di riferimento
   const grids = components.get(OBC.Grids);
   grids.create(world);
 
-  // Inizializza tutti i componenti registrati
-  components.init();
-
-  // Posiziona la camera
-  await world.camera.controls.setLookAt(5, 5, 5, 0, 0, 0);
-
   // Cubo di test
-  const cubeMat = new THREE.MeshLambertMaterial({ color: 0x6528d7 });
-  const cubeGeom = new THREE.BoxGeometry(1, 1, 1);
-  const cube = new THREE.Mesh(cubeGeom, cubeMat);
+  const material = new THREE.MeshLambertMaterial({ color: 0x6528d7 });
+  const geometry = new THREE.BoxGeometry();
+  const cube = new THREE.Mesh(geometry, material);
   world.scene.three.add(cube);
 
   // Luce base
   const light = new THREE.DirectionalLight(0xffffff, 1);
   light.position.set(10, 20, 10);
   world.scene.three.add(light);
+
+  // Setup della scena (come da docs)
+  (world.scene as OBC.SimpleScene).setup();
+
+  // Posizioniamo la camera
+  world.camera.controls.setLookAt(3, 3, 3, 0, 0, 0);
 
   viewerContext = { components, world };
   return viewerContext;

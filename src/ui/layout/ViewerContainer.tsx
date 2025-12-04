@@ -7,15 +7,21 @@ export const ViewerContainer: React.FC = () => {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (!containerRef.current) return;
-    void initAederaViewer(containerRef.current);
+    const container = containerRef.current;
+    if (!container) return;
+
+    // inizializza il viewer ThatOpen una sola volta
+    initAederaViewer(container);
   }, []);
 
   return (
     <div
       ref={containerRef}
-      style={{ width: "100%", height: "100%", background: "#151515" }}
+      style={{
+        width: "100%",
+        height: "100%",
+        backgroundColor: "#151515",
+      }}
     />
   );
 };
-
