@@ -3,107 +3,460 @@
 import type { FragmentsModel } from "@thatopen/fragments";
 
 /**
- * Mappa minimal per testare la lettura dati.
- * In un secondo step la estenderemo con WBS, codice tariffa, ecc.
+ * Mappa di proprietà per un singolo PropertySet (Pset).
+ * Esempio: { "WBS0": "01", "WBS1": "010", "CodiceTariffa": "123.05.A" }
  */
-export interface ElementProps {
-  name?: string;
-  globalId?: string;
-  rawAttributes?: any;
+export interface PsetPropertiesMap {
+  [propName: string]: unknown;
 }
-
-export interface ModelPropsMap {
-  [localId: number]: ElementProps;
-}
-
-// archivio di tutti i modelli caricati (key = modelId)
-const modelsProps: Map<string, ModelPropsMap> = new Map();
 
 /**
- * Estrattore iniziale di informazioni dal FragmentsModel.
- * Pattern ispirato al tutorial "ModelInformation" ufficiale.
- *
- * Per ora:
- *  - logga le categorie presenti
- *  - prende una categoria a caso
- *  - legge Name e GlobalId degli elementi di quella categoria
- *  - salva i dati in una mappa locale (localId -> info)
+ * Mappa di tutti i PropertySet di un elemento.
+ * Esempio:
+ * {
+ *   "Pset_AED_WBS": { WBS0: "...", WBS1: "..." },
+ *   "Pset_AED_Tariffa": { CodiceTariffa: "123.05.A" }
+ * }
  */
-export async function extractPropertiesForModel(model: FragmentsModel): Promise<void> {
+export interface PsetsMap {
+  [psetName: string]: PsetPropertiesMap;
+}
+
+/**
+ * Record di proprietà normalizzate per un singolo elemento IFC.
+ */
+export interface ElementRecord {
+  /** localId interno del FragmentsModel */
+  localId: number;
+  /** GUID IFC, se disponibile */
+  globalId?: string;
+  /** Tipo IFC (es. IFCWALLSTANDARDCASE) se riusciamo a leggerlo */
+  ifcType?: string;
+  /** Nome logico dell’elemento (Name IFC) */
+  name?: string;
+  /** Tutti i Pset estratti via IsDefinedBy */
+  psets: PsetsMap;
+  /** Raw data completo di ThatOpen, per debug / future elaborazioni */
+  raw: any;
+}
+
+/**
+ * Indice di tutte le proprietà per un singolo modello Fragments.
+ */
+interface ModelPropertiesIndex {
+  modelId: string;
+  elements: Map<number, ElementRecord>; // localId -> ElementRecord
+}
+
+/**
+ * Registro globale: modelId -> indice delle proprietà.
+ * Questo È il nostro mini "Property Engine" in memoria.
+ */
+const modelsIndex = new Map<string, ModelPropertiesIndex>();
+
+/**
+ * Estrae e indicizza tutte le proprietà per un dato FragmentsModel.
+ * Da chiamare subito dopo il caricamento del modello IFC.
+ */
+export async function extractPropertiesForModel(
+  model: FragmentsModel,
+): Promise<void> {
   const modelId = model.modelId;
-  const propsMap: ModelPropsMap = {};
 
-  // 1) Liste categorie presenti nel modello
-  const categories = await model.getCategories();
-  console.log("[ModelProps] ModelInformation — modelId:", modelId);
-  console.log("[ModelProps] Categorie presenti nel modello:", categories);
+  console.time(`[PropertyEngine] extractPropertiesForModel ${modelId}`);
 
-  if (!categories || categories.length === 0) {
-    modelsProps.set(modelId, propsMap);
-    return;
-  }
-
-  // 2) Prendiamo una categoria qualsiasi (per ora la prima, solo per test)
-  const sampleCategory = categories[0];
-
-  // 3) Otteniamo tutti i localId di quella categoria
-  const categoryIds = await model.getItemsOfCategories([
-    new RegExp(`^${sampleCategory}$`),
-  ]);
-  const localIds = categoryIds[sampleCategory] ?? [];
-
-  console.log(
-    `[ModelProps] Categoria campione "${sampleCategory}" — elementi:`,
-    localIds.length,
-  );
-
+  // 1. Tutti i localId del modello
+  const localIds = await model.getItemsIds();
   if (!localIds.length) {
-    modelsProps.set(modelId, propsMap);
+    console.warn(
+      "[PropertyEngine] Nessun item trovato nel modello durante l'estrazione proprietà",
+      { modelId },
+    );
+    modelsIndex.set(modelId, {
+      modelId,
+      elements: new Map(),
+    });
+    console.timeEnd(`[PropertyEngine] extractPropertiesForModel ${modelId}`);
     return;
   }
 
-  // 4) Recuperiamo Name e GlobalId di quegli elementi (pattern dal tutorial ModelInformation)
-  const data = await model.getItemsData(localIds, {
-    attributesDefault: false,
-    attributes: ["Name", "GlobalId"],
-  });
+  // 2. In parallelo:
+  //    - GUID IFC
+  //    - ItemData (attributes + relazioni IsDefinedBy)
+  //    - RawItemData (per category / SchemaName / ecc.)
+  const [guids, itemsData, rawItemsMap] = await Promise.all([
+    model.getGuidsByLocalIds(localIds),
+    (model as any).getItemsData(localIds, {
+      attributesDefault: true,
+      relations: {
+        IsDefinedBy: {
+          attributes: true,
+          relations: true,
+        },
+      },
+    }),
+    model.getItems(localIds),
+  ]);
 
-  data.forEach((itemData, index) => {
-    const localId = localIds[index];
+  const elements = new Map<number, ElementRecord>();
 
-    const nameAttr = (itemData as any).Name;
-    const globalIdAttr = (itemData as any).GlobalId;
+  // Helper per leggere un attributo che può essere sia valore diretto
+  // sia ItemAttribute { value, type }
+  const getAttrValue = (source: any, key: string): unknown => {
+    if (!source) return undefined;
+    const raw = source[key];
+    if (raw == null) return undefined;
+    if (typeof raw === "object" && "value" in raw) {
+      return (raw as any).value;
+    }
+    return raw;
+  };
+
+  for (let i = 0; i < localIds.length; i++) {
+    const localId = localIds[i];
+    const guid = guids[i] ?? undefined;
+    const item: any = itemsData[i];
+    const rawItem: any = (rawItemsMap as any).get(localId);
+
+    // In alcune versioni i dati sono in item.attributes, in altre in item.data
+    const attributes = item?.attributes ?? item?.data ?? {};
+    const relations = item?.relations ?? {};
+
+    // --- NAME -------------------------------------------------------
+    // In questo modello gli attributi non sono in item.attributes (attrKeys: [])
+    // ma in rawItem.data (ItemAttribute { value, type })
+    const dataAttrs: Record<string, any> | undefined = rawItem?.data ?? item?.data;
 
     const name =
-      nameAttr && !Array.isArray(nameAttr) && "value" in nameAttr
-        ? (nameAttr.value as string)
-        : undefined;
+      // 1) Prova a leggere direttamente da item (caso tutorial ModelInformation)
+      (getAttrValue(item, "Name") as string | undefined) ??
+      (getAttrValue(item, "LongName") as string | undefined) ??
+      // 2) Poi da attributes (se esistono in qualche modello futuro)
+      (getAttrValue(attributes, "Name") as string | undefined) ??
+      (getAttrValue(attributes, "LongName") as string | undefined) ??
+      // 3) Infine dai dati grezzi (RawItemData.data)
+      (dataAttrs
+        ? ((getAttrValue(dataAttrs, "Name") ??
+            getAttrValue(dataAttrs, "LongName")) as string | undefined)
+        : undefined);
 
-    const globalId =
-      globalIdAttr && !Array.isArray(globalIdAttr) && "value" in globalIdAttr
-        ? (globalIdAttr.value as string)
-        : undefined;
+    // --- TIPO / CATEGORIA IFC ---------------------------------------
+    // 1) SchemaName (es. IFCWALLSTANDARDCASE)
+    const schemaName =
+      (getAttrValue(attributes, "SchemaName") as string | undefined) ??
+      (getAttrValue(rawItem?.data, "SchemaName") as string | undefined);
 
-    propsMap[localId] = {
+    // 2) Tipo esplicito (ifcType / Type)
+    const explicitType =
+      (getAttrValue(attributes, "ifcType") as string | undefined) ??
+      (getAttrValue(attributes, "IFCType") as string | undefined) ??
+      (getAttrValue(attributes, "Type") as string | undefined) ??
+      (getAttrValue(rawItem?.data, "ifcType") as string | undefined) ??
+      (getAttrValue(rawItem?.data, "Type") as string | undefined);
+
+    // 3) Category
+    let categoryString: string | undefined;
+
+    // category come stringa nel RawItemData
+    if (typeof rawItem?.category === "string" && rawItem.category.length) {
+      categoryString = rawItem.category;
+    }
+
+    // category come numero negli Attributes (Attributes.category)
+    if (!categoryString) {
+      const catAttr =
+        getAttrValue(attributes, "category") ??
+        (rawItem?.category as number | undefined);
+      if (catAttr != null) {
+        categoryString = String(catAttr);
+      }
+    }
+
+    // Ordine di priorità:
+    //   1) tipo esplicito
+    //   2) SchemaName
+    //   3) category (stringa o numero)
+    const ifcType =
+      explicitType ??
+      schemaName ??
+      categoryString ??
+      undefined;
+
+    // --- PSETS via IsDefinedBy (stile tutorial ThatOpen) ------------
+    const psets: PsetsMap = {};
+
+    // 1) Path principale: item.IsDefinedBy (come in ModelInformation)
+    // 2) Fallback: relations.IsDefinedBy se mai venisse usato in futuro
+    const isDefinedByRaw =
+      (item as any).IsDefinedBy ??
+      (item as any).isDefinedBy ??
+      relations.IsDefinedBy ??
+      relations.isDefinedBy;
+
+    const isDefinedByArray = Array.isArray(isDefinedByRaw)
+      ? isDefinedByRaw
+      : isDefinedByRaw
+        ? [isDefinedByRaw]
+        : [];
+
+    for (const pset of isDefinedByArray) {
+      if (!pset) continue;
+
+      // Nome del Pset: pset.Name (ItemAttribute) o fallback
+      const psetNameAttr = (pset as any).Name;
+      const psetNameValue =
+        psetNameAttr && typeof psetNameAttr === "object" && "value" in psetNameAttr
+          ? (psetNameAttr as any).value
+          : psetNameAttr;
+
+      const psetName =
+        (psetNameValue as string | undefined) ??
+        (pset as any).psetName ??
+        (pset as any).name ??
+        undefined;
+
+      if (!psetName) continue;
+
+      const props: PsetPropertiesMap = {};
+
+      // Come da tutorial: pset.HasProperties è un array di proprietà
+      const hasProps = (pset as any).HasProperties as any[] | undefined;
+
+      if (Array.isArray(hasProps)) {
+        for (const prop of hasProps) {
+          if (!prop) continue;
+
+          const propNameAttr = (prop as any).Name;
+          const propNameValue =
+            propNameAttr &&
+            typeof propNameAttr === "object" &&
+            "value" in propNameAttr
+              ? (propNameAttr as any).value
+              : propNameAttr;
+
+          const nominalValueAttr = (prop as any).NominalValue;
+          const nominalValue =
+            nominalValueAttr &&
+            typeof nominalValueAttr === "object" &&
+            "value" in nominalValueAttr
+              ? (nominalValueAttr as any).value
+              : nominalValueAttr;
+
+          const propName = propNameValue as string | undefined;
+
+          if (!propName || nominalValue === undefined) continue;
+          props[propName] = nominalValue;
+        }
+      }
+
+      // Fallback extra: se non troviamo HasProperties, proviamo eventuali
+      // strutture alternative (Properties, PropertiesList, ecc.)
+      if (!Object.keys(props).length) {
+        const relAttrs: any = (pset as any).attributes ?? {};
+        const propsContainer: any =
+          (pset as any).properties ??
+          relAttrs.Properties ??
+          relAttrs.PropertiesList ??
+          null;
+
+        if (propsContainer && typeof propsContainer === "object") {
+          for (const [propName, propValue] of Object.entries<any>(
+            propsContainer,
+          )) {
+            const value =
+              propValue &&
+              typeof propValue === "object" &&
+              "value" in (propValue as any)
+                ? (propValue as any).value
+                : propValue;
+            props[propName] = value;
+          }
+        }
+      }
+
+      if (!Object.keys(props).length) continue;
+      psets[String(psetName)] = props;
+    }
+
+    const record: ElementRecord = {
+      localId,
+      globalId: guid ?? undefined,
+      ifcType,
       name,
-      globalId,
-      rawAttributes: itemData,
+      psets,
+      raw: item,
     };
-  });
 
-  modelsProps.set(modelId, propsMap);
+    elements.set(localId, record);
 
-  console.log("[ModelProps] Esempio di dati estratti:", {
+    // DEBUG: per i primi 3 elementi logghiamo un po' di info grezze
+    if (i < 3) {
+      console.log("[PropertyEngine][DEBUG] item base data", {
+        modelId,
+        localId,
+        attrKeys: Object.keys(attributes ?? {}),
+        rawCategory: rawItem?.category,
+        rawDataKeys: rawItem?.data ? Object.keys(rawItem.data) : undefined,
+        ifcType,
+        name,
+      });
+    }
+  }
+
+  modelsIndex.set(modelId, { modelId, elements });
+
+  console.timeEnd(`[PropertyEngine] extractPropertiesForModel ${modelId}`);
+  console.log("[PropertyEngine] indicizzazione completata:", {
     modelId,
-    sampleCategory,
-    sampleCount: localIds.length,
-    firstItem: propsMap[localIds[0]],
+    itemsCount: elements.size,
   });
+
+  // Esempio di record per debug
+  const anyElement = elements.values().next().value as ElementRecord | undefined;
+  if (anyElement) {
+    console.log("[PropertyEngine] Esempio ElementRecord:", {
+      modelId,
+      localId: anyElement.localId,
+      name: anyElement.name,
+      ifcType: anyElement.ifcType,
+      numPsets: Object.keys(anyElement.psets).length,
+      psetNames: Object.keys(anyElement.psets),
+    });
+  }
+
+  // Statistiche di base (come nel log che vedevi con withType)
+  const allPsetNames = new Set<string>();
+  let withType = 0;
+  let withPsets = 0;
+  for (const el of elements.values()) {
+    if (el.ifcType) withType++;
+    const names = Object.keys(el.psets);
+    if (names.length) {
+      withPsets++;
+      for (const n of names) allPsetNames.add(n);
+    }
+  }
+
+  console.log("[PropertyEngine] stats modello:", {
+    modelId,
+    itemsCount: elements.size,
+    withType,
+    withPsets,
+    psetNamesCount: allPsetNames.size,
+  });
+  console.log(
+    "[PropertyEngine] elenco Pset (max 50):",
+    Array.from(allPsetNames).slice(0, 50),
+  );
 }
 
 /**
- * Ottieni la mappa delle proprietà per un dato modello (modelId)
+ * Restituisce l'indice di proprietà per un dato modello.
  */
-export function getModelProps(modelId: string): ModelPropsMap | undefined {
-  return modelsProps.get(modelId);
+export function getModelPropertiesIndex(
+  modelId: string,
+): ModelPropertiesIndex | undefined {
+  return modelsIndex.get(modelId);
+}
+
+/**
+ * Restituisce tutte le ElementRecord di un modello, come array.
+ */
+export function getAllElements(
+  modelId: string,
+): ElementRecord[] | undefined {
+  const index = modelsIndex.get(modelId);
+  if (!index) return undefined;
+  return [...index.elements.values()];
+}
+
+/**
+ * Restituisce le proprietà di un singolo elemento dato modelId + localId.
+ */
+export function getElementRecord(
+  modelId: string,
+  localId: number,
+): ElementRecord | undefined {
+  const index = modelsIndex.get(modelId);
+  if (!index) return undefined;
+  return index.elements.get(localId);
+}
+
+/**
+ * Elenca tutti i nomi di Pset presenti in uno specifico modello.
+ */
+export function listPsetNames(modelId: string): string[] {
+  const index = modelsIndex.get(modelId);
+  if (!index) return [];
+  const names = new Set<string>();
+  for (const element of index.elements.values()) {
+    for (const psetName of Object.keys(element.psets)) {
+      names.add(psetName);
+    }
+  }
+  return [...names].sort();
+}
+
+/**
+ * Elenca tutti i nomi di proprietà di un certo Pset (aggregati su tutti gli elementi).
+ */
+export function listPsetPropertyNames(
+  modelId: string,
+  psetName: string,
+): string[] {
+  const index = modelsIndex.get(modelId);
+  if (!index) return [];
+  const names = new Set<string>();
+  for (const element of index.elements.values()) {
+    const pset = element.psets[psetName];
+    if (!pset) continue;
+    for (const propName of Object.keys(pset)) {
+      names.add(propName);
+    }
+  }
+  return [...names].sort();
+}
+
+/**
+ * Elenca tutti i valori distinti di una certa proprietà di Pset.
+ * Utile per popolare dropdown (es. tutti i codici WBS1, tutte le tariffe, ecc.)
+ */
+export function listPsetPropertyValues(
+  modelId: string,
+  psetName: string,
+  propName: string,
+): unknown[] {
+  const index = modelsIndex.get(modelId);
+  if (!index) return [];
+  const values = new Set<unknown>();
+  for (const element of index.elements.values()) {
+    const pset = element.psets[psetName];
+    if (!pset) continue;
+    if (!(propName in pset)) continue;
+    values.add(pset[propName]);
+  }
+  return [...values];
+}
+
+/**
+ * Ritorna tutti gli elementi che hanno una certa proprietà di Pset, opzionalmente filtrata per valore.
+ */
+export function findElementsByPsetProperty(
+  modelId: string,
+  psetName: string,
+  propName: string,
+  value?: unknown,
+): ElementRecord[] {
+  const index = modelsIndex.get(modelId);
+  if (!index) return [];
+  const result: ElementRecord[] = [];
+  for (const element of index.elements.values()) {
+    const pset = element.psets[psetName];
+    if (!pset) continue;
+    if (!(propName in pset)) continue;
+    if (value === undefined || pset[propName] === value) {
+      result.push(element);
+    }
+  }
+  return result;
 }
