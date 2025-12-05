@@ -53,12 +53,6 @@ export function initAederaViewer(container: HTMLDivElement): AederaViewerContext
   const grids = components.get(OBC.Grids);
   grids.create(world);
 
-  // cubo di test
-  const material = new THREE.MeshLambertMaterial({ color: 0x6528d7 });
-  const geometry = new THREE.BoxGeometry();
-  const cube = new THREE.Mesh(geometry, material);
-  world.scene.three.add(cube);
-
   // luce
   const light = new THREE.DirectionalLight(0xffffff, 1);
   light.position.set(10, 20, 10);

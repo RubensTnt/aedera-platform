@@ -350,6 +350,11 @@ export async function extractPropertiesForModel(
   );
 }
 
+
+// ---------------------------------------------------------------------------
+// Helper di interrogazione generici (categorie / Pset)
+// ---------------------------------------------------------------------------
+
 /**
  * Restituisce l'indice di proprietà per un dato modello.
  */
@@ -460,3 +465,151 @@ export function findElementsByPsetProperty(
   }
   return result;
 }
+
+
+/**
+ * Ritorna la lista di tutti i modelId indicizzati.
+ */
+export function getIndexedModelIds(): string[] {
+  return [...modelsIndex.keys()];
+}
+
+/**
+ * Elenca tutti gli ifcType distinti presenti in un modello.
+ * Esempi: ["IFCBEAM", "IFCFURNISHINGELEMENT", ...]
+ */
+export function listIfcTypes(modelId: string): string[] {
+  const index = modelsIndex.get(modelId);
+  if (!index) return [];
+  const types = new Set<string>();
+  for (const element of index.elements.values()) {
+    if (!element.ifcType) continue;
+    types.add(element.ifcType);
+  }
+  return [...types].sort();
+}
+
+/**
+ * Restituisce tutti gli elementi di un certo ifcType.
+ */
+export function getElementsOfIfcType(
+  modelId: string,
+  ifcType: string,
+): ElementRecord[] {
+  const index = modelsIndex.get(modelId);
+  if (!index) return [];
+  const result: ElementRecord[] = [];
+  const typeUpper = ifcType.toUpperCase();
+  for (const element of index.elements.values()) {
+    if (!element.ifcType) continue;
+    if (element.ifcType.toUpperCase() === typeUpper) {
+      result.push(element);
+    }
+  }
+  return result;
+}
+
+/**
+ * Restituisce tutti gli elementi che appartengono a una lista di ifcType.
+ */
+export function getElementsOfIfcTypes(
+  modelId: string,
+  ifcTypes: string[],
+): ElementRecord[] {
+  const index = modelsIndex.get(modelId);
+  if (!index) return [];
+  const wanted = new Set(ifcTypes.map((t) => t.toUpperCase()));
+  const result: ElementRecord[] = [];
+  for (const element of index.elements.values()) {
+    if (!element.ifcType) continue;
+    if (wanted.has(element.ifcType.toUpperCase())) {
+      result.push(element);
+    }
+  }
+  return result;
+}
+
+
+// ---------------------------------------------------------------------------
+// Strato "di dominio" minimale: WBS e Tariffe basate su Pset
+// ---------------------------------------------------------------------------
+
+/**
+ * Config di mapping per WBS: quale Pset e quali proprietà usare.
+ * Esempio atteso (da adattare ai tuoi Pset reali):
+ *  psetName: "Pset_AED_WBS"
+ *  levelProps: ["WBS0", "WBS1", "WBS2", "WBS3"]
+ */
+export interface WbsMappingConfig {
+  psetName: string;
+  levelProps: string[];
+}
+
+/**
+ * Config di mapping per Tariffa: quale Pset e quali proprietà usare.
+ * Esempio atteso:
+ *  psetName: "Pset_AED_Tariffa"
+ *  codeProp: "CodiceTariffa"
+ *  descriptionProp: "DescrizioneTariffa"
+ */
+export interface TariffMappingConfig {
+  psetName: string;
+  codeProp: string;
+  descriptionProp?: string;
+}
+
+/**
+ * Path WBS di un elemento, come lista di livelli ("01", "010", "010.1", ...).
+ */
+export function getElementWbsPath(
+  modelId: string,
+  localId: number,
+  config: WbsMappingConfig,
+): string[] | undefined {
+  const element = getElementRecord(modelId, localId);
+  if (!element) return undefined;
+  const pset = element.psets[config.psetName];
+  if (!pset) return undefined;
+
+  const levels: string[] = [];
+  for (const propName of config.levelProps) {
+    const v = pset[propName];
+    if (v == null) break;
+    const s = String(v).trim();
+    if (!s) break;
+    levels.push(s);
+  }
+  return levels.length ? levels : undefined;
+}
+
+/**
+ * Info tariffaria minimale per un elemento.
+ */
+export interface TariffInfo {
+  code: string;
+  description?: string;
+}
+
+export function getElementTariff(
+  modelId: string,
+  localId: number,
+  config: TariffMappingConfig,
+): TariffInfo | undefined {
+  const element = getElementRecord(modelId, localId);
+  if (!element) return undefined;
+  const pset = element.psets[config.psetName];
+  if (!pset) return undefined;
+
+  const codeRaw = pset[config.codeProp];
+  if (codeRaw == null || String(codeRaw).trim() === "") return undefined;
+
+  const code = String(codeRaw).trim();
+  const description =
+    config.descriptionProp && pset[config.descriptionProp] != null
+      ? String(pset[config.descriptionProp]).trim()
+      : undefined;
+
+  return { code, description };
+}
+
+

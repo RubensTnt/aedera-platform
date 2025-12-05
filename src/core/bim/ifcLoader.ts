@@ -2,7 +2,12 @@
 
 import * as OBC from "@thatopen/components";
 import { getAederaViewer } from "@core/bim/thatopen";
-import { extractPropertiesForModel } from "@core/bim/modelProperties";
+import {
+  extractPropertiesForModel,
+  listIfcTypes,
+  listPsetNames,
+  listPsetPropertyNames,
+} from "@core/bim/modelProperties";
 
 /**
  * Carica un file IFC selezionato dall'utente e lo converte in Fragments.
@@ -49,4 +54,36 @@ export async function loadIfcFromFile(file: File): Promise<void> {
   } catch (error) {
     console.warn("[IFC Loader] Errore durante extractPropertiesForModel:", error);
   }
+
+    // 🔎 Debug: riepilogo categorie e Pset disponibili per il modello caricato
+  try {
+    const modelId = model.modelId;
+    const ifcTypes = listIfcTypes(modelId);
+    const psetNames = listPsetNames(modelId);
+
+    console.log("[PropertyEngine] IFC types nel modello:", {
+      modelId,
+      count: ifcTypes.length,
+      types: ifcTypes,
+    });
+
+    console.log("[PropertyEngine] Pset nel modello:", {
+      modelId,
+      count: psetNames.length,
+      psets: psetNames,
+    });
+
+    // per i primi 3 Pset mostriamo anche le proprietà disponibili
+    for (const psetName of psetNames.slice(0, 3)) {
+      const propNames = listPsetPropertyNames(modelId, psetName);
+      console.log("[PropertyEngine] Pset dettaglio:", {
+        modelId,
+        psetName,
+        properties: propNames,
+      });
+    }
+  } catch (error) {
+    console.warn("[IFC Loader] Errore durante il riepilogo PropertyEngine:", error);
+  }
+
 }
