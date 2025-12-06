@@ -467,27 +467,6 @@ export function findElementsByPsetProperty(
 }
 
 
-/**
- * Ritorna la lista di tutti i modelId indicizzati.
- */
-export function getIndexedModelIds(): string[] {
-  return [...modelsIndex.keys()];
-}
-
-/**
- * Elenca tutti gli ifcType distinti presenti in un modello.
- * Esempi: ["IFCBEAM", "IFCFURNISHINGELEMENT", ...]
- */
-export function listIfcTypes(modelId: string): string[] {
-  const index = modelsIndex.get(modelId);
-  if (!index) return [];
-  const types = new Set<string>();
-  for (const element of index.elements.values()) {
-    if (!element.ifcType) continue;
-    types.add(element.ifcType);
-  }
-  return [...types].sort();
-}
 
 /**
  * Restituisce tutti gli elementi di un certo ifcType.
@@ -559,30 +538,6 @@ export interface TariffMappingConfig {
 }
 
 /**
- * Path WBS di un elemento, come lista di livelli ("01", "010", "010.1", ...).
- */
-export function getElementWbsPath(
-  modelId: string,
-  localId: number,
-  config: WbsMappingConfig,
-): string[] | undefined {
-  const element = getElementRecord(modelId, localId);
-  if (!element) return undefined;
-  const pset = element.psets[config.psetName];
-  if (!pset) return undefined;
-
-  const levels: string[] = [];
-  for (const propName of config.levelProps) {
-    const v = pset[propName];
-    if (v == null) break;
-    const s = String(v).trim();
-    if (!s) break;
-    levels.push(s);
-  }
-  return levels.length ? levels : undefined;
-}
-
-/**
  * Info tariffaria minimale per un elemento.
  */
 export interface TariffInfo {
@@ -612,4 +567,178 @@ export function getElementTariff(
   return { code, description };
 }
 
+
+
+
+/**
+ * Restituisce la lista di tutti i modelId indicizzati nel Property Engine.
+ */
+export function getIndexedModelIds(): string[] {
+  return [...modelsIndex.keys()];
+}
+
+/**
+ * Elenca tutti gli ifcType distinti presenti in un modello.
+ */
+export function listIfcTypes(modelId: string): string[] {
+  const index = modelsIndex.get(modelId);
+  if (!index) return [];
+  const types = new Set<string>();
+  for (const element of index.elements.values()) {
+    if (!element.ifcType) continue;
+    types.add(element.ifcType);
+  }
+  return [...types].sort();
+}
+
+/**
+ * Configurazione per interpretare i valori WBS dagli IFC.
+ * psetName: nome del PropertySet (es. "Pset_AED_WBS")
+ * levelProps: lista ordinata dei nomi delle proprietà di livello
+ *             (es. ["WBS0","WBS1","WBS4","WBS7","WBS8","WBS9"])
+ */
+export interface WbsMappingConfig {
+  psetName: string;
+  levelProps: string[];
+}
+
+/**
+ * Configurazione per leggere il codice tariffa dagli IFC.
+ */
+export interface TariffMappingConfig {
+  psetName: string;
+  codeProp: string;
+}
+
+/**
+ * Configurazione di default WBS:
+ * usiamo direttamente i nomi dei parametri reali presenti nel modello IFC.
+ *
+ * NOTA: psetName è stringa vuota = "cerca in tutti i Pset".
+ */
+export const DEFAULT_WBS_MAPPING: WbsMappingConfig = {
+  psetName: "",
+  levelProps: [
+    "STM_WBS_00_Commessa",
+    "STM_WBS_01_Costi",
+    "STM_WBS_04_Edificio",
+    "STM_WBS_06_Livello / Piano",
+    "STM_WBS_07_Categoria d'opera",
+    "STM_WBS_08_Categoria di lavorazione",
+    "STM_WBS_09_Sottocategoria di lavorazione",
+  ],
+};
+
+/**
+ * Configurazione di default Tariffa:
+ * il codice tariffa (RCM) è il parametro STM_Tariffa Combinata.
+ *
+ * psetName stringa vuota = "cerca in tutti i Pset".
+ */
+export const DEFAULT_TARIFF_MAPPING: TariffMappingConfig = {
+  psetName: "",
+  codeProp: "STM_Tariffa Combinata",
+};
+
+/**
+ * Restituisce il percorso WBS (lista di livelli non vuoti) per un elemento,
+ * oppure undefined se non presente.
+ *
+ * Se config.psetName è stringa vuota, cerchiamo i parametri in QUALSIASI Pset.
+ */
+export function getElementWbsPath(
+  modelId: string,
+  localId: number,
+  config: WbsMappingConfig = DEFAULT_WBS_MAPPING,
+): string[] | undefined {
+  const element = getElementRecord(modelId, localId);
+  if (!element) return undefined;
+
+  const levels: string[] = [];
+  const psetName = config.psetName?.trim();
+
+  // Definiamo da quali Pset leggere:
+  const psetsToScan = psetName
+    ? [element.psets[psetName]].filter(Boolean) // solo il Pset indicato
+    : Object.values(element.psets); // tutti i Pset
+
+  if (!psetsToScan.length) return undefined;
+
+  for (const propName of config.levelProps) {
+    let found: string | undefined;
+
+    for (const pset of psetsToScan) {
+      if (!pset) continue;
+      if (!(propName in pset)) continue;
+      const raw = pset[propName];
+      if (raw == null) continue;
+      const value = String(raw).trim();
+      if (!value) continue;
+      found = value;
+      break;
+    }
+
+    if (found) {
+      levels.push(found);
+    }
+  }
+
+  return levels.length ? levels : undefined;
+}
+
+/**
+ * Restituisce il codice tariffa di un elemento, oppure undefined.
+ *
+ * Se config.psetName è stringa vuota, cerchiamo il parametro in QUALSIASI Pset.
+ */
+export function getElementTariffCode(
+  modelId: string,
+  localId: number,
+  config: TariffMappingConfig = DEFAULT_TARIFF_MAPPING,
+): string | undefined {
+  const element = getElementRecord(modelId, localId);
+  if (!element) return undefined;
+
+  const psetName = config.psetName?.trim();
+
+  const psetsToScan = psetName
+    ? [element.psets[psetName]].filter(Boolean)
+    : Object.values(element.psets);
+
+  for (const pset of psetsToScan) {
+    if (!pset) continue;
+    const raw = pset[config.codeProp];
+    if (raw == null) continue;
+    const value = String(raw).trim();
+    if (value) return value;
+  }
+
+  return undefined;
+}
+
+/**
+ * Elenca tutti i valori distinti della WBS (su tutti i livelli STM_WBS_*)
+ * presenti nel modello, usando la configurazione DEFAULT_WBS_MAPPING.
+ * Utile per popolare il dropdown di filtro WBS.
+ */
+export function listAllWbsValues(
+  modelId: string,
+  config: WbsMappingConfig = DEFAULT_WBS_MAPPING,
+): string[] {
+  const index = modelsIndex.get(modelId);
+  if (!index) return [];
+
+  const values = new Set<string>();
+
+  for (const element of index.elements.values()) {
+    const path = getElementWbsPath(modelId, element.localId, config);
+    if (!path) continue;
+    for (const v of path) {
+      const str = String(v).trim();
+      if (str) values.add(str);
+    }
+  }
+
+  return [...values].sort();
+}
 

@@ -69,3 +69,14 @@ export function initAederaViewer(container: HTMLDivElement): AederaViewerContext
 export function getAederaViewer(): AederaViewerContext | null {
   return viewerContext;
 }
+
+
+// DEBUG GLOBAL EXPORTS
+import * as ModelProps from "./modelProperties";
+import { poEngine } from "../po/poEngine";
+
+(window as any).AED = {
+  modelProps: ModelProps,
+  po: poEngine,
+};
+

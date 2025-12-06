@@ -2,7 +2,9 @@
 
 import React from "react";
 import { ViewerContainer } from "@ui/layout/ViewerContainer";
-// I percorsi con @core / @ui saranno configurati in tsconfig + vite alias
+import { PoUploadPanel } from "@ui/po/PoUploadPanel";
+import { PoFilterPanel } from "@ui/po/PoFilterPanel";
+
 
 export const AppLayout: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
   return (
@@ -33,9 +35,17 @@ export const AppLayout: React.FC<{ children?: React.ReactNode }> = ({ children }
         </main>
 
         {/* Right panel */}
-        <aside style={{ borderLeft: "1px solid #333", padding: "0.5rem" }}>
-          {/* Qui: pannelli info, tab proprietà / SAL / ecc. */}
-          <em>Dettagli elemento / pannello della view</em>
+        <aside
+          style={{
+            borderLeft: "1px solid #333",
+            padding: "0.5rem",
+            display: "flex",
+            flexDirection: "column",
+            gap: "0.5rem",
+          }}
+        >
+          <PoUploadPanel poId="PO-Struttura-Catania" />
+          <PoFilterPanel />
         </aside>
       </div>
     </div>
