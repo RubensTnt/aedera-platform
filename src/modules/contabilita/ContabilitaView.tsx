@@ -1,10 +1,12 @@
+// src/modules/contabilita/ContabilitaView.tsx
+
 import React from "react";
+import { PoGrid } from "@ui/po/PoGrid";
 
 export const ContabilitaView: React.FC = () => {
   return (
-    <div>
-      <h2>View: Contabilità / SAL</h2>
-      <p>Qui avremo snapshot quantità, SAL e scostamenti.</p>
+    <div className="h-full">
+      <PoGrid />
     </div>
   );
 };

@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@tanstack/react-table": "^8.21.3",
     "@thatopen/components": "^3.2.6",
     "@thatopen/components-front": "^3.2.15",
     "@thatopen/ui": "^3.2.0",
