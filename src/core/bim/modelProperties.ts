@@ -508,6 +508,160 @@ export function getElementsOfIfcTypes(
   return result;
 }
 
+// ---------------------------------------------------------------------------
+// Pset custom aziendale: DATI_WBS
+// ---------------------------------------------------------------------------
+
+/**
+ * Nome del PropertySet custom usato come unica fonte di verità
+ * per i parametri WBS e Codice Tariffa gestiti dalla piattaforma.
+ */
+export const DATI_WBS_PSET_NAME = "DATI_WBS" as const;
+
+/**
+ * Struttura logica delle proprietà contenute nel Pset DATI_WBS.
+ *
+ * Tutti i campi sono opzionali: la UI decide quali rendere obbligatori
+ * per i vari flussi (es. WBS0-WBS3 obbligatorie, le altre opzionali).
+ *
+ * - WBS0..WBS10: livelli della scomposizione WBS
+ * - TariffaCodice: codice tariffa associato all'elemento
+ */
+export interface DatiWbsProps {
+  WBS0?: string | null;
+  WBS1?: string | null;
+  WBS2?: string | null;
+  WBS3?: string | null;
+  WBS4?: string | null;
+  WBS5?: string | null;
+  WBS6?: string | null;
+  WBS7?: string | null;
+  WBS8?: string | null;
+  WBS9?: string | null;
+  WBS10?: string | null;
+  TariffaCodice?: string | null;
+}
+
+/**
+ * Restituisce le proprietà DATI_WBS per un singolo elemento, se presenti.
+ * Se il Pset non esiste, ritorna undefined.
+ */
+export function getDatiWbsProps(
+  modelId: string,
+  localId: number,
+): DatiWbsProps | undefined {
+  const element = getElementRecord(modelId, localId);
+  if (!element) return undefined;
+
+  const pset = element.psets[DATI_WBS_PSET_NAME];
+  if (!pset) return undefined;
+
+  const result: DatiWbsProps = {};
+
+  for (let level = 0; level <= 10; level++) {
+    const key = `WBS${level}` as keyof DatiWbsProps;
+    const raw = (pset as any)[key as string];
+    if (raw === undefined) continue;
+    result[key] = raw == null ? null : String(raw);
+  }
+
+  if ("TariffaCodice" in pset) {
+    const raw = (pset as any)["TariffaCodice"];
+    result.TariffaCodice = raw == null ? null : String(raw);
+  }
+
+  return result;
+}
+
+/**
+ * Si assicura che il Pset DATI_WBS esista per l'elemento dato.
+ * Se manca, lo crea e lo registra in element.psets.
+ */
+export function ensureDatiWbsPsetExists(element: ElementRecord): PsetPropertiesMap {
+  let pset = element.psets[DATI_WBS_PSET_NAME];
+  if (!pset) {
+    pset = {};
+    element.psets[DATI_WBS_PSET_NAME] = pset;
+  }
+  return pset;
+}
+
+/**
+ * Applica un "patch" di proprietà DATI_WBS a un singolo elemento.
+ *
+ * Regole:
+ * - se una chiave non è presente nel patch, il valore esistente non viene toccato
+ * - se una chiave è presente con valore `null`, la proprietà viene rimossa dal Pset
+ * - se una chiave è presente con stringa (anche vuota), viene salvata così com'è
+ */
+export function setDatiWbsProps(
+  modelId: string,
+  localId: number,
+  patch: Partial<DatiWbsProps>,
+): DatiWbsProps {
+  const element = getElementRecord(modelId, localId);
+  if (!element) {
+    console.warn("[DATI_WBS] setDatiWbsProps: elemento non trovato", {
+      modelId,
+      localId,
+    });
+    return patch as DatiWbsProps;
+  }
+
+  const pset = ensureDatiWbsPsetExists(element);
+
+  const applyKey = (key: keyof DatiWbsProps) => {
+    if (!(key in patch)) return;
+    const value = patch[key];
+    if (value === null) {
+      // null = rimozione esplicita della proprietà dal Pset
+      delete (pset as any)[key as string];
+    } else if (value === undefined) {
+      // undefined = non toccare
+      return;
+    } else {
+      (pset as any)[key as string] = value;
+    }
+  };
+
+  for (let level = 0; level <= 10; level++) {
+    applyKey(`WBS${level}` as keyof DatiWbsProps);
+  }
+  applyKey("TariffaCodice");
+
+  // Ritorniamo la vista normalizzata aggiornata
+  return getDatiWbsProps(modelId, localId) ?? {};
+}
+
+/**
+ * Configurazione di mapping WBS basata sul Pset custom DATI_WBS.
+ * Utile per riusare la logica generica getElementWbsPath/POEngine
+ * direttamente sulla sorgente aziendale.
+ */
+export const DATI_WBS_MAPPING: WbsMappingConfig = {
+  psetName: DATI_WBS_PSET_NAME,
+  levelProps: [
+    "WBS0",
+    "WBS1",
+    "WBS2",
+    "WBS3",
+    "WBS4",
+    "WBS5",
+    "WBS6",
+    "WBS7",
+    "WBS8",
+    "WBS9",
+    "WBS10",
+  ],
+};
+
+/**
+ * Mapping della tariffa basato su DATI_WBS.
+ */
+export const DATI_WBS_TARIFF_MAPPING: TariffMappingConfig = {
+  psetName: DATI_WBS_PSET_NAME,
+  codeProp: "TariffaCodice",
+};
 
 // ---------------------------------------------------------------------------
 // Strato "di dominio" minimale: WBS e Tariffe basate su Pset

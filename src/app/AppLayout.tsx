@@ -12,10 +12,11 @@ export const AppLayout: React.FC<{ children?: React.ReactNode }> = ({ children }
 
   const navItems = [
     { path: "/progettazione", label: "Progettazione" },
+    { path: "/parametri-bim", label: "Parametri BIM" },
     { path: "/gare", label: "Gare" },
     { path: "/contabilita", label: "Contabilità" },
     { path: "/programmazione", label: "Programmazione" },
-    { path: "/direzione-tecnica", label: "Direzione tecnica" },
+    { path: "/direzione-tecnica", label: "Direzione Tecnica" },
   ];
 
   return (
