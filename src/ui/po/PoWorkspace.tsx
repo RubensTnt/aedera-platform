@@ -23,6 +23,24 @@ export const PoWorkspace: React.FC = () => {
     setItems(nextItems);
   }, []);
 
+  const handleAddItem = React.useCallback(() => {
+    poEngine.addItem();
+    setItems([...poEngine.items]);
+  }, []);
+
+  const handleChangeItem = React.useCallback(
+    (id: string, patch: Partial<POItem>) => {
+      poEngine.updateItem(id, patch);
+      setItems([...poEngine.items]);
+    },
+    [],
+  );
+
+  const handleDeleteItem = React.useCallback((id: string) => {
+    poEngine.removeItem(id);
+    setItems([...poEngine.items]);
+  }, []);
+
   return (
     <div
       style={{
@@ -42,7 +60,12 @@ export const PoWorkspace: React.FC = () => {
 
       {/* Grid che occupa lo spazio rimanente con scroll verticale */}
       <div style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
-        <PoGrid items={items} />
+        <PoGrid
+          items={items}
+          onAddItem={handleAddItem}
+          onChangeItem={handleChangeItem}
+          onDeleteItem={handleDeleteItem}
+        />
       </div>
     </div>
   );

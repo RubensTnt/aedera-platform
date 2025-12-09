@@ -1,6 +1,11 @@
 // src/app/AppLayout.tsx
 
-import React from "react";
+import React, {
+  useState,
+  useRef,
+  useCallback,
+  useEffect,
+} from "react";
 import { ViewerContainer } from "@ui/layout/ViewerContainer";
 import { Link, useLocation } from "react-router-dom";
 import { PoWorkspace } from "@ui/po/PoWorkspace";
@@ -18,6 +23,49 @@ export const AppLayout: React.FC<{ children?: React.ReactNode }> = ({
     { path: "/programmazione", label: "Programmazione" },
     { path: "/direzione-tecnica", label: "Direzione Tecnica" },
   ];
+
+  // larghezza pannello destro (in px), regolabile da UI
+  const [rightWidth, setRightWidth] = useState<number>(320);
+  const isResizingRef = useRef(false);
+  const lastXRef = useRef<number | null>(null);
+
+  const handleResizeStart = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      isResizingRef.current = true;
+      lastXRef.current = event.clientX;
+      event.preventDefault();
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const handleMouseMove = (event: MouseEvent) => {
+      if (!isResizingRef.current || lastXRef.current == null) return;
+
+      const dx = event.clientX - lastXRef.current;
+      lastXRef.current = event.clientX;
+
+      setRightWidth((prev) => {
+        const next = prev - dx; // se trascini verso destra, pannello più largo
+        const min = 220;
+        const max = 600;
+        return Math.min(Math.max(next, min), max);
+      });
+    };
+
+    const handleMouseUp = () => {
+      isResizingRef.current = false;
+      lastXRef.current = null;
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, []);
 
   return (
     <div
@@ -64,7 +112,7 @@ export const AppLayout: React.FC<{ children?: React.ReactNode }> = ({
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "280px 1fr 320px",
+          gridTemplateColumns: "280px 1fr",
           height: "calc(100vh - 48px)",
         }}
       >
@@ -79,24 +127,51 @@ export const AppLayout: React.FC<{ children?: React.ReactNode }> = ({
           {children}
         </aside>
 
-        {/* Viewer */}
-        <main>
-          <ViewerContainer />
-        </main>
-
-        {/* Right panel: workspace PO completo */}
-        <aside
+        {/* Center: viewer + resizer + right panel */}
+        <div
           style={{
-            borderLeft: "1px solid #333",
-            padding: "0.5rem",
             display: "flex",
-            flexDirection: "column",
-            overflowY: "auto",
+            minWidth: 0,
             minHeight: 0,
+            height: "100%",
+            overflow: "hidden",
           }}
         >
-          <PoWorkspace />
-        </aside>
+          {/* Viewer */}
+          <main
+            style={{
+              flex: "1 1 auto",
+              minWidth: 0,
+            }}
+          >
+            <ViewerContainer />
+          </main>
+
+          {/* Resizer handle */}
+          <div
+            style={{
+              width: "4px",
+              cursor: "col-resize",
+              backgroundColor: "#333",
+            }}
+            onMouseDown={handleResizeStart}
+          />
+
+          {/* Right panel: workspace PO completo */}
+          <aside
+            style={{
+              width: rightWidth,
+              borderLeft: "1px solid #333",
+              padding: "0.5rem",
+              display: "flex",
+              flexDirection: "column",
+              overflowY: "auto",
+              minHeight: 0,
+            }}
+          >
+            <PoWorkspace />
+          </aside>
+        </div>
       </div>
     </div>
   );

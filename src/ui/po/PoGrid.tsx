@@ -79,47 +79,6 @@ async function highlightTariff(tariffCode: string) {
   await highlighter.highlightByID("select", modelIdMap, true);
 }
 
-// ---------------------------------------------------------------------------
-// COLONNE DELLA GRID
-// ---------------------------------------------------------------------------
-
-const columns: ColumnDef<POItem>[] = [
-  { header: "WBS7", accessorKey: "wbs7" },
-  { header: "WBS8", accessorKey: "wbs8" },
-  { header: "WBS9", accessorKey: "wbs9" },
-  { header: "RCM", accessorKey: "rcm" },
-  { header: "Tariffa", accessorKey: "tariffCode" },
-  {
-    header: "Descrizione",
-    accessorKey: "description",
-    size: 400,
-  },
-  { header: "UM", accessorKey: "unit", size: 40 },
-  {
-    header: "Q1(p1)",
-    accessorKey: "baselineQuantity",
-    cell: (info) => {
-      const v = info.getValue() as number | undefined;
-      return v != null ? v.toString() : "";
-    },
-  },
-  {
-    header: "Cu(p1)",
-    accessorKey: "unitPrice",
-    cell: (info) => {
-      const v = info.getValue() as number | undefined;
-      return v != null ? v.toFixed(2) : "";
-    },
-  },
-  {
-    header: "CST(p1)",
-    accessorKey: "baselineAmount",
-    cell: (info) => {
-      const v = info.getValue() as number | undefined;
-      return v != null ? v.toFixed(2) : "";
-    },
-  },
-];
 
 // ---------------------------------------------------------------------------
 // COMPONENTE PRINCIPALE: PoGrid
@@ -130,12 +89,278 @@ interface PoGridProps {
    * Lista di righe PO. Se non fornita, si usa poEngine.items come fallback.
    */
   items?: POItem[];
+
+  /**
+   * Callbacks per creare / modificare / cancellare righe.
+   * Se non fornite, la grid resta read-only.
+   */
+  onAddItem?: () => void;
+  onChangeItem?: (id: string, patch: Partial<POItem>) => void;
+  onDeleteItem?: (id: string) => void;
 }
 
-export const PoGrid: React.FC<PoGridProps> = ({ items }) => {
+
+export const PoGrid: React.FC<PoGridProps> = ({
+  items,
+  onAddItem,
+  onChangeItem,
+  onDeleteItem,
+}) => {
   const [search, setSearch] = React.useState("");
 
   const poItems = items ?? poEngine.items;
+  const handleTextChange = React.useCallback(
+    (rowId: string, field: keyof POItem, value: string) => {
+      if (!onChangeItem) return;
+      onChangeItem(rowId, { [field]: value } as Partial<POItem>);
+    },
+    [onChangeItem],
+  );
+
+  const handleNumberChange = React.useCallback(
+    (rowId: string, field: keyof POItem, value: string) => {
+      if (!onChangeItem) return;
+      const trimmed = value.trim();
+      const num =
+        trimmed === "" ? undefined : Number(trimmed.replace(",", "."));
+      onChangeItem(rowId, {
+        [field]: Number.isNaN(num) ? undefined : num,
+      } as Partial<POItem>);
+    },
+    [onChangeItem],
+  );
+
+  const columns = React.useMemo<ColumnDef<POItem>[]>(() => {
+    return [
+      {
+        id: "actions",
+        header: "",
+        cell: ({ row }) => (
+          <button
+            type="button"
+            style={{
+              border: "none",
+              background: "transparent",
+              color: "#f87171",
+              cursor: "pointer",
+              fontSize: 11,
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onDeleteItem?.(row.original.id);
+            }}
+            title="Elimina riga"
+          >
+            ✕
+          </button>
+        ),
+        size: 24,
+      },
+      {
+        header: "Codice",
+        accessorKey: "code",
+        cell: (info) => {
+          const rowId = info.row.original.id;
+          const value = (info.getValue() as string | undefined) ?? "";
+          return (
+            <input
+              style={{ width: "100%", border: "none", background: "transparent" }}
+              value={value}
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) =>
+                handleTextChange(rowId, "code", e.target.value)
+              }
+            />
+          );
+        },
+      },
+      {
+        header: "WBS7",
+        accessorKey: "wbs7",
+        cell: (info) => {
+          const rowId = info.row.original.id;
+          const value = (info.getValue() as string | undefined) ?? "";
+          return (
+            <input
+              style={{ width: "100%", border: "none", background: "transparent" }}
+              value={value}
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) =>
+                handleTextChange(rowId, "wbs7", e.target.value)
+              }
+            />
+          );
+        },
+      },
+      {
+        header: "WBS8",
+        accessorKey: "wbs8",
+        cell: (info) => {
+          const rowId = info.row.original.id;
+          const value = (info.getValue() as string | undefined) ?? "";
+          return (
+            <input
+              style={{ width: "100%", border: "none", background: "transparent" }}
+              value={value}
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) =>
+                handleTextChange(rowId, "wbs8", e.target.value)
+              }
+            />
+          );
+        },
+      },
+      {
+        header: "WBS9",
+        accessorKey: "wbs9",
+        cell: (info) => {
+          const rowId = info.row.original.id;
+          const value = (info.getValue() as string | undefined) ?? "";
+          return (
+            <input
+              style={{ width: "100%", border: "none", background: "transparent" }}
+              value={value}
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) =>
+                handleTextChange(rowId, "wbs9", e.target.value)
+              }
+            />
+          );
+        },
+      },
+      {
+        header: "RCM",
+        accessorKey: "rcm",
+        cell: (info) => {
+          const rowId = info.row.original.id;
+          const value = (info.getValue() as string | undefined) ?? "";
+          return (
+            <input
+              style={{ width: "100%", border: "none", background: "transparent" }}
+              value={value}
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) =>
+                handleTextChange(rowId, "rcm", e.target.value)
+              }
+            />
+          );
+        },
+      },
+      {
+        header: "Tariffa",
+        accessorKey: "tariffCode",
+        cell: (info) => {
+          const rowId = info.row.original.id;
+          const value = (info.getValue() as string | undefined) ?? "";
+          return (
+            <input
+              style={{ width: "100%", border: "none", background: "transparent" }}
+              value={value}
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) =>
+                handleTextChange(rowId, "tariffCode", e.target.value)
+              }
+            />
+          );
+        },
+      },
+      {
+        header: "Descrizione",
+        accessorKey: "description",
+        cell: (info) => {
+          const rowId = info.row.original.id;
+          const value = (info.getValue() as string | undefined) ?? "";
+          return (
+            <input
+              style={{ width: "100%", border: "none", background: "transparent" }}
+              value={value}
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) =>
+                handleTextChange(rowId, "description", e.target.value)
+              }
+            />
+          );
+        },
+        size: 400,
+      },
+      {
+        header: "UM",
+        accessorKey: "unit",
+        cell: (info) => {
+          const rowId = info.row.original.id;
+          const value = (info.getValue() as string | undefined) ?? "";
+          return (
+            <input
+              style={{ width: "100%", border: "none", background: "transparent" }}
+              value={value}
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) =>
+                handleTextChange(rowId, "unit", e.target.value)
+              }
+            />
+          );
+        },
+        size: 40,
+      },
+      {
+        header: "Q1(p1)",
+        accessorKey: "baselineQuantity",
+        cell: (info) => {
+          const rowId = info.row.original.id;
+          const v = info.getValue() as number | undefined;
+          const value = v != null ? String(v) : "";
+          return (
+            <input
+              style={{ width: "100%", border: "none", background: "transparent" }}
+              value={value}
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) =>
+                handleNumberChange(rowId, "baselineQuantity", e.target.value)
+              }
+            />
+          );
+        },
+      },
+      {
+        header: "Cu(p1)",
+        accessorKey: "unitPrice",
+        cell: (info) => {
+          const rowId = info.row.original.id;
+          const v = info.getValue() as number | undefined;
+          const value = v != null ? v.toString() : "";
+          return (
+            <input
+              style={{ width: "100%", border: "none", background: "transparent" }}
+              value={value}
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) =>
+                handleNumberChange(rowId, "unitPrice", e.target.value)
+              }
+            />
+          );
+        },
+      },
+      {
+        header: "CST(p1)",
+        accessorKey: "baselineAmount",
+        cell: (info) => {
+          const rowId = info.row.original.id;
+          const v = info.getValue() as number | undefined;
+          const value = v != null ? v.toString() : "";
+          return (
+            <input
+              style={{ width: "100%", border: "none", background: "transparent" }}
+              value={value}
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) =>
+                handleNumberChange(rowId, "baselineAmount", e.target.value)
+              }
+            />
+          );
+        },
+      },
+    ];
+  }, [handleTextChange, handleNumberChange, onDeleteItem]);
 
   const table = useReactTable({
     data: poItems,
@@ -171,7 +396,27 @@ export const PoGrid: React.FC<PoGridProps> = ({ items }) => {
           marginBottom: "0.25rem",
         }}
       >
-        <strong>Voci PO ({poItems.length})</strong>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <strong>Voci PO ({poItems.length})</strong>
+          {onAddItem && (
+            <button
+              type="button"
+              onClick={() => onAddItem()}
+              style={{
+                fontSize: 11,
+                padding: "2px 6px",
+                borderRadius: 4,
+                border: "1px solid #4ade80",
+                backgroundColor: "#022c22",
+                color: "#bbf7d0",
+                cursor: "pointer",
+              }}
+            >
+              + Nuova riga
+            </button>
+          )}
+        </div>
+
         <input
           type="text"
           placeholder="Filtra testo..."

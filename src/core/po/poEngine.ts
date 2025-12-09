@@ -58,6 +58,8 @@ export class PoEngine {
   private wbsConfig: WbsMappingConfig;
   private tariffConfig: TariffMappingConfig;
 
+  private nextIdCounter = 1;
+
   constructor(
     wbsConfig: WbsMappingConfig = DEFAULT_WBS_MAPPING,
     tariffConfig: TariffMappingConfig = DEFAULT_TARIFF_MAPPING,
@@ -71,6 +73,7 @@ export class PoEngine {
    */
   setItems(items: POItem[]): void {
     this._items = items;
+    this.nextIdCounter = (items?.length ?? 0) + 1;
   }
 
   get items(): POItem[] {
@@ -198,6 +201,65 @@ export class PoEngine {
       totalBaselineQuantity,
       totalBaselineAmount,
     };
+  }
+
+    /**
+   * Restituisce il poId "corrente" da usare per nuove righe.
+   * Se non ci sono items, usa un valore di default.
+   */
+  private getCurrentPoId(): string {
+    if (this._items.length) return this._items[0].poId;
+    return "PO-1";
+  }
+
+  /**
+   * Crea una nuova riga PO vuota (o con valori iniziali)
+   * e la aggiunge alla lista, restituendo l'oggetto creato.
+   */
+  addItem(initial: Partial<POItem> = {}): POItem {
+    const poId = initial.poId ?? this.getCurrentPoId();
+    const id =
+      initial.id ??
+      `${poId}-R${this.nextIdCounter++}`;
+
+    const newItem: POItem = {
+      id,
+      poId,
+      ...initial,
+    };
+
+    this._items = [...this._items, newItem];
+    return newItem;
+  }
+
+  /**
+   * Aggiorna una riga esistente identificata da id,
+   * applicando un patch parziale.
+   */
+  updateItem(id: string, patch: Partial<POItem>): POItem | undefined {
+    const idx = this._items.findIndex((it) => it.id === id);
+    if (idx === -1) return undefined;
+
+    const current = this._items[idx];
+    const updated: POItem = {
+      ...current,
+      ...patch,
+      id: current.id,
+      poId: patch.poId ?? current.poId,
+    };
+
+    const next = [...this._items];
+    next[idx] = updated;
+    this._items = next;
+
+    return updated;
+  }
+
+  /**
+   * Rimuove una riga dalla lista, se esiste.
+   */
+  removeItem(id: string): void {
+    this._items = this._items.filter((it) => it.id !== id);
   }
 }
 

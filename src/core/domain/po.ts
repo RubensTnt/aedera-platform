@@ -50,17 +50,17 @@ export interface POItem {
   /**
    * Codice breve interno della voce (può coincidere con RCM o essere un codice aziendale).
    */
-  code: string;
+  code?: string;
 
   /**
    * Descrizione estesa della lavorazione.
    */
-  description: string;
+  description?: string;
 
   /**
    * Unità di misura (es. m³, m², cad, corpo, ecc.).
    */
-  unit: string;
+  unit?: string;
 
   /**
    * Costo unitario (Cu) di baseline per questa voce.
