@@ -12,6 +12,12 @@ import {
   getIndexedModelIds,
   listIfcTypes,
   listAllWbsValues,
+  DATI_WBS_MAPPING,
+  DATI_WBS_TARIFF_MAPPING,
+  DEFAULT_WBS_MAPPING,
+  DEFAULT_TARIFF_MAPPING,
+  getAllElements,
+  getDatiWbsProps,
 } from "@core/bim/modelProperties";
 
 
@@ -55,6 +61,23 @@ export const PoFilterPanel: React.FC = () => {
   const [result, setResult] = useState<PoFilterResult | null>(null);
   const [status, setStatus] = useState<string>("Nessun filtro applicato");
 
+  interface CoverageSummary {
+    totalElements: number;
+    elementsWithDatiWbs: number;
+    elementsWithTariffFromDatiWbs: number;
+    distinctTariffsInDatiWbs: number;
+    poItemsWithTariff: number;
+    distinctTariffsInPo: number;
+    tariffCodesInDatiWbsNotInPo: string[];
+    tariffCodesInPoNotInDatiWbs: string[];
+  }
+
+  const [coverage, setCoverage] = useState<CoverageSummary | null>(null);
+
+  // se true, i filtri usano DATI_WBS_PSET_NAME (DATI_WBS)
+  // altrimenti usano i parametri IFC storici (STM_*)
+  const [useDatiWbs, setUseDatiWbs] = useState<boolean>(false);
+
   // contatore per rileggere le opzioni PO quando viene caricato un Excel
   const [poItemsCount, setPoItemsCount] = useState<number>(0);
   const [modelInitialized, setModelInitialized] = useState<boolean>(false);
@@ -69,6 +92,19 @@ export const PoFilterPanel: React.FC = () => {
     }, 2000);
     return () => clearInterval(interval);
   }, []);
+
+  // Cambia la sorgente WBS/Tariffa usata dal PoEngine:
+  // - IFC originale (DEFAULT_*)
+  // - oppure Pset custom DATI_WBS (DATI_WBS_*)
+  useEffect(() => {
+    if (useDatiWbs) {
+      poEngine.setWbsConfig(DATI_WBS_MAPPING);
+      poEngine.setTariffConfig(DATI_WBS_TARIFF_MAPPING);
+    } else {
+      poEngine.setWbsConfig(DEFAULT_WBS_MAPPING);
+      poEngine.setTariffConfig(DEFAULT_TARIFF_MAPPING);
+    }
+  }, [useDatiWbs]);
 
   // Poll leggero per inizializzare modelId, ifcTypes e WBS options
   useEffect(() => {
@@ -88,14 +124,96 @@ export const PoFilterPanel: React.FC = () => {
       const types = listIfcTypes(id);
       setIfcTypes(types);
 
-      const wbsVals = listAllWbsValues(id);
-      setWbsOptions(wbsVals);
-
       setModelInitialized(true);
     }, 1000);
 
     return () => clearInterval(interval);
   }, [modelInitialized]);
+
+  // Ricalcola le opzioni WBS ogni volta che:
+  // - si inizializza un modelId
+  // - oppure cambi sorgente (IFC vs DATI_WBS)
+  useEffect(() => {
+    if (!modelId) {
+      setWbsOptions([]);
+      return;
+    }
+
+    const config = useDatiWbs ? DATI_WBS_MAPPING : DEFAULT_WBS_MAPPING;
+    const values = listAllWbsValues(modelId, config);
+    setWbsOptions(values);
+    // reset del valore selezionato quando si cambia "origine"
+    setWbsCode("");
+  }, [modelId, useDatiWbs]);
+
+  // Calcolo riepilogo di copertura DATI_WBS <-> PO
+  useEffect(() => {
+    if (!modelId) {
+      setCoverage(null);
+      return;
+    }
+
+    const elements = getAllElements(modelId) ?? [];
+    const totalElements = elements.length;
+
+    let elementsWithDatiWbs = 0;
+    let elementsWithTariffFromDatiWbs = 0;
+    const tariffsFromDatiWbs = new Set<string>();
+
+    for (const el of elements) {
+      const dati = getDatiWbsProps(modelId, el.localId);
+      if (!dati) continue;
+
+      elementsWithDatiWbs++;
+      const code = dati.TariffaCodice?.trim();
+      if (code) {
+        elementsWithTariffFromDatiWbs++;
+        tariffsFromDatiWbs.add(code);
+      }
+    }
+
+    const tariffsFromPo = new Set<string>();
+    let poItemsWithTariff = 0;
+
+    for (const item of poEngine.items) {
+      const raw = item.tariffCode;
+      if (!raw) continue;
+      const code = String(raw).trim();
+      if (!code) continue;
+      poItemsWithTariff++;
+      tariffsFromPo.add(code);
+    }
+
+    // differenze tra insiemi
+    const onlyInDatiWbs: string[] = [];
+    const onlyInPo: string[] = [];
+
+    for (const code of tariffsFromDatiWbs) {
+      if (!tariffsFromPo.has(code)) {
+        onlyInDatiWbs.push(code);
+      }
+    }
+
+    for (const code of tariffsFromPo) {
+      if (!tariffsFromDatiWbs.has(code)) {
+        onlyInPo.push(code);
+      }
+    }
+
+    onlyInDatiWbs.sort();
+    onlyInPo.sort();
+
+    setCoverage({
+      totalElements,
+      elementsWithDatiWbs,
+      elementsWithTariffFromDatiWbs,
+      distinctTariffsInDatiWbs: tariffsFromDatiWbs.size,
+      poItemsWithTariff,
+      distinctTariffsInPo: tariffsFromPo.size,
+      tariffCodesInDatiWbsNotInPo: onlyInDatiWbs,
+      tariffCodesInPoNotInDatiWbs: onlyInPo,
+    });
+  }, [modelId, poItemsCount]);
 
   // Quando cambia il numero di voci PO, ricalcola i codici tariffa disponibili
   useEffect(() => {
@@ -189,6 +307,22 @@ export const PoFilterPanel: React.FC = () => {
     <div className="p-3 border rounded bg-white shadow-sm text-sm space-y-3">
       <div className="font-semibold">Filtri PO ⇄ BIM</div>
 
+      <div className="flex items-center justify-between text-xs mb-1">
+        <span className="text-gray-700">
+          Sorgente WBS / Tariffa:
+          {" "}
+          <strong>{useDatiWbs ? "DATI_WBS" : "Parametri IFC (STM_*)"} </strong>
+        </span>
+        <label className="inline-flex items-center gap-1 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={useDatiWbs}
+            onChange={(e) => setUseDatiWbs(e.target.checked)}
+          />
+          <span>Usa DATI_WBS</span>
+        </label>
+      </div>
+
       <div className="space-y-2">
         <div>
           <label className="block text-xs font-medium mb-1">Tipo IFC</label>
@@ -280,6 +414,65 @@ export const PoFilterPanel: React.FC = () => {
           </div>
         </div>
       )}
+
+      {coverage && (
+        <div className="mt-3 border-t pt-2 text-xs space-y-1">
+          <div className="font-semibold">Copertura DATI_WBS ⇄ PO</div>
+          <div>
+            <strong>Elementi IFC totali:</strong>{" "}
+            {coverage.totalElements}
+          </div>
+          <div>
+            <strong>Elementi con Pset DATI_WBS:</strong>{" "}
+            {coverage.elementsWithDatiWbs}
+          </div>
+          <div>
+            <strong>Elementi con TariffaCodice (DATI_WBS):</strong>{" "}
+            {coverage.elementsWithTariffFromDatiWbs}
+          </div>
+          <div>
+            <strong>Voci PO con tariffa:</strong>{" "}
+            {coverage.poItemsWithTariff}
+          </div>
+          <div>
+            <strong>Codici tariffa distinti in DATI_WBS:</strong>{" "}
+            {coverage.distinctTariffsInDatiWbs}
+          </div>
+          <div>
+            <strong>Codici tariffa distinti nel PO:</strong>{" "}
+            {coverage.distinctTariffsInPo}
+          </div>
+
+          {coverage.tariffCodesInDatiWbsNotInPo.length > 0 && (
+            <div className="mt-1">
+              <strong>Codici in DATI_WBS ma NON nel PO:</strong>{" "}
+              <span className="text-amber-700">
+                {coverage.tariffCodesInDatiWbsNotInPo.join(", ")}
+              </span>
+            </div>
+          )}
+
+          {coverage.tariffCodesInPoNotInDatiWbs.length > 0 && (
+            <div className="mt-1">
+              <strong>Codici nel PO ma NON in DATI_WBS:</strong>{" "}
+              <span className="text-amber-700">
+                {coverage.tariffCodesInPoNotInDatiWbs.join(", ")}
+              </span>
+            </div>
+          )}
+
+          {coverage.tariffCodesInDatiWbsNotInPo.length === 0 &&
+            coverage.tariffCodesInPoNotInDatiWbs.length === 0 &&
+            (coverage.distinctTariffsInDatiWbs > 0 ||
+              coverage.distinctTariffsInPo > 0) && (
+              <div className="mt-1 text-emerald-700">
+                Tutti i codici tariffa presenti in DATI_WBS coincidono con
+                quelli del PO.
+              </div>
+            )}
+        </div>
+      )}
+
     </div>
   );
 };

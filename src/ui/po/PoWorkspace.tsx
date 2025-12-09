@@ -17,9 +17,7 @@ export const PoWorkspace: React.FC = () => {
   const [items, setItems] = React.useState<POItem[]>(poEngine.items);
 
   const handleItemsLoaded = React.useCallback((nextItems: POItem[]) => {
-    // 1) aggiorniamo il motore centrale (usato da filtri / PropertyEngine)
     poEngine.setItems(nextItems);
-    // 2) aggiorniamo la UI (PoGrid)
     setItems(nextItems);
   }, []);
 
@@ -49,16 +47,27 @@ export const PoWorkspace: React.FC = () => {
         gap: "0.5rem",
         height: "100%",
         minHeight: 0,
+        overflow: "hidden", // 🟢 IMPORTANTISSIMO
       }}
     >
-      <PoUploadPanel
-        poId="PO-Struttura-Catania"
-        onItemsLoaded={handleItemsLoaded}
-      />
 
-      <PoFilterPanel />
+      {/* SEZIONE SUPERIORE SCROLLABILE (Upload + Filtri) */}
+      <div style={{
+        flexShrink: 0,
+        overflowY: "auto",
+        maxHeight: "45%",   // puoi regolarlo (40-50%)
+        paddingRight: "2px"
+      }}>
+        <PoUploadPanel
+          poId="PO-Struttura-Catania"
+          onItemsLoaded={handleItemsLoaded}
+        />
+        <div style={{ marginTop: "0.5rem" }}>
+          <PoFilterPanel />
+        </div>
+      </div>
 
-      {/* Grid che occupa lo spazio rimanente con scroll verticale */}
+      {/* TABELLA (scorre nel suo spazio) */}
       <div style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
         <PoGrid
           items={items}
