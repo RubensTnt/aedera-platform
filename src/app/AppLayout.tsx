@@ -2,12 +2,12 @@
 
 import React from "react";
 import { ViewerContainer } from "@ui/layout/ViewerContainer";
-import { PoUploadPanel } from "@ui/po/PoUploadPanel";
-import { PoFilterPanel } from "@ui/po/PoFilterPanel";
 import { Link, useLocation } from "react-router-dom";
+import { PoWorkspace } from "@ui/po/PoWorkspace";
 
-
-export const AppLayout: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
+export const AppLayout: React.FC<{ children?: React.ReactNode }> = ({
+  children,
+}) => {
   const location = useLocation();
 
   const navItems = [
@@ -20,7 +20,10 @@ export const AppLayout: React.FC<{ children?: React.ReactNode }> = ({ children }
   ];
 
   return (
-    <div className="app-shell" style={{ display: "grid", gridTemplateRows: "auto 1fr" }}>
+    <div
+      className="app-shell"
+      style={{ display: "grid", gridTemplateRows: "auto 1fr" }}
+    >
       {/* Header */}
       <header
         style={{
@@ -44,7 +47,9 @@ export const AppLayout: React.FC<{ children?: React.ReactNode }> = ({ children }
                 style={{
                   color: active ? "#facc15" : "#f5f5f5",
                   textDecoration: "none",
-                  borderBottom: active ? "2px solid #facc15" : "2px solid transparent",
+                  borderBottom: active
+                    ? "2px solid #facc15"
+                    : "2px solid transparent",
                   paddingBottom: "2px",
                 }}
               >
@@ -79,18 +84,18 @@ export const AppLayout: React.FC<{ children?: React.ReactNode }> = ({ children }
           <ViewerContainer />
         </main>
 
-        {/* Right panel */}
+        {/* Right panel: workspace PO completo */}
         <aside
           style={{
             borderLeft: "1px solid #333",
             padding: "0.5rem",
             display: "flex",
             flexDirection: "column",
-            gap: "0.5rem",
+            overflowY: "auto",
+            minHeight: 0,
           }}
         >
-          <PoUploadPanel poId="PO-Struttura-Catania" />
-          <PoFilterPanel />
+          <PoWorkspace />
         </aside>
       </div>
     </div>

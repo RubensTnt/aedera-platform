@@ -20,7 +20,7 @@ import {
   getAllElements,
   getElementTariffCode,
   DEFAULT_TARIFF_MAPPING,
-} from "@core/bim/modelProperties"; 
+} from "@core/bim/modelProperties";
 
 // ---------------------------------------------------------------------------
 // HIGHIGHTER: evidenzia elementi nel BIM quando clicchi una riga PO
@@ -42,7 +42,7 @@ async function getHighlighterInstance() {
         color: new THREE.Color("#bcf124"),
         opacity: 0.9,
         transparent: true,
-      } as any, // evitiamo problemi di typing troppo rigidi
+      } as any,
     });
     highlighterReady = true;
   }
@@ -57,8 +57,6 @@ async function highlightTariff(tariffCode: string) {
   const highlighter = await getHighlighterInstance();
   if (!highlighter) return;
 
-  // Costruiamo la ModelIdMap usando il Property Engine,
-  // esattamente come fa il PoEngine.
   const modelIdMap: Record<string, Set<number>> = {};
   const modelIds = getIndexedModelIds();
 
@@ -86,36 +84,17 @@ async function highlightTariff(tariffCode: string) {
 // ---------------------------------------------------------------------------
 
 const columns: ColumnDef<POItem>[] = [
-  {
-    header: "WBS7",
-    accessorKey: "wbs7",
-  },
-  {
-    header: "WBS8",
-    accessorKey: "wbs8",
-  },
-  {
-    header: "WBS9",
-    accessorKey: "wbs9",
-  },
-  {
-    header: "RCM",
-    accessorKey: "rcm",
-  },
-  {
-    header: "Tariffa",
-    accessorKey: "tariffCode",
-  },
+  { header: "WBS7", accessorKey: "wbs7" },
+  { header: "WBS8", accessorKey: "wbs8" },
+  { header: "WBS9", accessorKey: "wbs9" },
+  { header: "RCM", accessorKey: "rcm" },
+  { header: "Tariffa", accessorKey: "tariffCode" },
   {
     header: "Descrizione",
     accessorKey: "description",
     size: 400,
   },
-  {
-    header: "UM",
-    accessorKey: "unit",
-    size: 40,
-  },
+  { header: "UM", accessorKey: "unit", size: 40 },
   {
     header: "Q1(p1)",
     accessorKey: "baselineQuantity",
@@ -146,18 +125,22 @@ const columns: ColumnDef<POItem>[] = [
 // COMPONENTE PRINCIPALE: PoGrid
 // ---------------------------------------------------------------------------
 
-export const PoGrid: React.FC = () => {
+interface PoGridProps {
+  /**
+   * Lista di righe PO. Se non fornita, si usa poEngine.items come fallback.
+   */
+  items?: POItem[];
+}
+
+export const PoGrid: React.FC<PoGridProps> = ({ items }) => {
   const [search, setSearch] = React.useState("");
 
-  // Le righe PO arrivano dal motore centrale, popolato dal PoUploadPanel
-  const poItems = poEngine.items; 
+  const poItems = items ?? poEngine.items;
 
   const table = useReactTable({
     data: poItems,
     columns,
-    state: {
-      globalFilter: search,
-    },
+    state: { globalFilter: search },
     globalFilterFn: (row, columnId, filterValue) => {
       const raw = row.getValue(columnId);
       if (raw == null) return false;
@@ -168,40 +151,77 @@ export const PoGrid: React.FC = () => {
   });
 
   return (
-    <div className="w-full h-full flex flex-col">
-      {/* BARRA DI RICERCA */}
-      <div className="mb-2">
+    <section
+      style={{
+        border: "1px solid #444",
+        padding: "0.5rem",
+        borderRadius: 4,
+        fontSize: 12,
+        display: "flex",
+        flexDirection: "column",
+        height: "100%",
+        minHeight: 0,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: "0.25rem",
+        }}
+      >
+        <strong>Voci PO ({poItems.length})</strong>
         <input
-          className="w-full border px-2 py-1 text-sm rounded"
-          placeholder="Cerca nel foglio PO…"
+          type="text"
+          placeholder="Filtra testo..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
+          style={{
+            fontSize: 12,
+            padding: "2px 4px",
+            borderRadius: 4,
+            border: "1px solid #555",
+          }}
         />
       </div>
 
-      {/* TABELLA */}
-      <div
-        className="flex-1 overflow-auto border rounded bg-white"
-        style={{ fontSize: "12px" }}
-      >
-        <table className="w-full border-collapse">
-          <thead className="bg-gray-200 sticky top-0 z-10">
-            {table.getHeaderGroups().map((hg) => (
-              <tr key={hg.id}>
-                {hg.headers.map((h) => (
-                  <th key={h.id} className="border px-2 py-1 text-left">
-                    {flexRender(h.column.columnDef.header, h.getContext())}
+      <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
+        <table
+          style={{
+            width: "100%",
+            borderCollapse: "collapse",
+          }}
+        >
+          <thead>
+            {table.getHeaderGroups().map((headerGroup) => (
+              <tr key={headerGroup.id}>
+                {headerGroup.headers.map((header) => (
+                  <th
+                    key={header.id}
+                    style={{
+                      borderBottom: "1px solid #555",
+                      padding: "2px 4px",
+                      textAlign: "left",
+                      position: "sticky",
+                      top: 0,
+                      backgroundColor: "#111",
+                    }}
+                  >
+                    {flexRender(
+                      header.column.columnDef.header,
+                      header.getContext(),
+                    )}
                   </th>
                 ))}
               </tr>
             ))}
           </thead>
-
           <tbody>
             {table.getRowModel().rows.map((row) => (
               <tr
                 key={row.id}
-                className="hover:bg-yellow-100 cursor-pointer"
+                style={{ cursor: "pointer" }}
                 onClick={() => {
                   const tariff = row.original.tariffCode;
                   if (tariff) {
@@ -209,22 +229,27 @@ export const PoGrid: React.FC = () => {
                   }
                 }}
               >
-                {row.getVisibleCells().map((cell) => {
-                  const cellDef = cell.column.columnDef.cell;
-
-                  return (
-                    <td key={cell.id} className="border px-2 py-1">
-                      {cellDef
-                        ? flexRender(cellDef, cell.getContext())
-                        : String(cell.getValue() ?? "")}
-                    </td>
-                  );
-                })}
+                {row.getVisibleCells().map((cell) => (
+                  <td
+                    key={cell.id}
+                    style={{
+                      borderBottom: "1px solid #333",
+                      padding: "2px 4px",
+                      fontSize: 11,
+                      whiteSpace: "nowrap",
+                      textOverflow: "ellipsis",
+                      overflow: "hidden",
+                    }}
+                    title={String(cell.getValue() ?? "")}
+                  >
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </td>
+                ))}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-    </div>
+    </section>
   );
 };
