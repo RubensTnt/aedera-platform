@@ -202,8 +202,24 @@ export async function applyDatiWbsToSelection(
     }
   }
 
+  // Notifica globale: i DATI_WBS sono cambiati.
+  // Questo permette a WbsTariffaView (o altri moduli) di aggiornare
+  // scan + heatmap senza accoppiarsi direttamente al pannellino.
+  if (typeof window !== "undefined" && updated.length > 0) {
+    const modelIds = Array.from(
+      new Set(updated.map((u) => u.modelId)),
+    );
+
+    window.dispatchEvent(
+      new CustomEvent("aedera:datiWbsUpdated", {
+        detail: { modelIds },
+      }),
+    );
+  }
+
   return updated;
 }
+
 
 /**
  * Applica la "heatmap" DATI_WBS:
