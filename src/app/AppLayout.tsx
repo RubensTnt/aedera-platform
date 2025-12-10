@@ -15,6 +15,8 @@ export const AppLayout: React.FC<{ children?: React.ReactNode }> = ({
 }) => {
   const location = useLocation();
 
+  const isParametriBim = location.pathname === "/parametri-bim";
+
   const navItems = [
     { path: "/progettazione", label: "Progettazione" },
     { path: "/parametri-bim", label: "Parametri BIM" },
@@ -144,7 +146,7 @@ export const AppLayout: React.FC<{ children?: React.ReactNode }> = ({
               minWidth: 0,
             }}
           >
-            <ViewerContainer />
+            <ViewerContainer showDatiWbsOverlay={isParametriBim} />
           </main>
 
           {/* Resizer handle */}
