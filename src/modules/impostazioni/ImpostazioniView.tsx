@@ -1,4 +1,5 @@
 import React from "react";
+import { DatiWbsProfileSettingsPanel } from "./DatiWbsProfileSettingsPanel";
 
 export const ImpostazioniView: React.FC = () => {
   return (
@@ -15,6 +16,13 @@ export const ImpostazioniView: React.FC = () => {
       <div className="flex-1 rounded-lg border border-slate-200 bg-slate-50 flex items-center justify-center text-xs text-slate-400">
         Qui potremo configurare profili DATI_WBS, colori heatmap, ecc.
       </div>
+
+      <section>
+        <h1 className="mb-3 text-xl font-semibold text-slate-900">
+          Parametri BIM
+        </h1>
+        <DatiWbsProfileSettingsPanel />
+      </section>
     </div>
   );
 };

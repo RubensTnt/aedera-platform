@@ -1,9 +1,14 @@
 // src/App.tsx
 import React from "react";
 import { AppRoutes } from "./app/AppRoutes";
+import { ProjectProvider } from "./core/projects/ProjectContext";
 
 const App: React.FC = () => {
-  return <AppRoutes />;
+  return (
+    <ProjectProvider>
+      <AppRoutes />
+    </ProjectProvider>
+  );
 };
 
 export default App;
