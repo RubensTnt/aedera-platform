@@ -1,4 +1,5 @@
-import { DatiWbsProfile, DEFAULT_DATI_WBS_PROFILE } from "./datiWbsProfile";
+import type { DatiWbsProfile } from "./datiWbsProfile";
+import { DEFAULT_DATI_WBS_PROFILE } from "./datiWbsProfile";
 
 type Listener = (profile: DatiWbsProfile) => void;
 

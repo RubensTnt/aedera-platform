@@ -4,19 +4,21 @@ import {
   applyDatiWbsToSelection,
   type SelectedElementWithDatiWbs,
 } from "@core/bim/selectionAdapter";
-import {
-  DEFAULT_DATI_WBS_PROFILE,
-  ALL_WBS_LEVEL_KEYS,
-} from "@core/bim/datiWbsProfile";
+import { ALL_WBS_LEVEL_KEYS } from "@core/bim/datiWbsProfile";
 import type { DatiWbsProps } from "@core/bim/modelProperties";
+import { useDatiWbsProfile } from "../../hooks/useDatiWbsProfile";
+import type { DatiWbsProfile } from "../../core/bim/datiWbsProfile";
+
 
 type DatiEditKey = keyof DatiWbsProps;
 
-const ALL_DATI_KEYS: DatiEditKey[] = [
-  ...ALL_WBS_LEVEL_KEYS,
-  "TariffaCodice",
-  "PacchettoCodice",
-];
+function getActiveDatiKeys(profile: DatiWbsProfile): DatiEditKey[] {
+  const activeWbsKeys = profile.levels
+    .filter((lvl) => lvl.enabled)
+    .map((lvl) => lvl.key) as DatiEditKey[];
+
+  return [...activeWbsKeys, "TariffaCodice", "PacchettoCodice"];
+}
 
 interface OverlayLevelInfo {
   key: DatiEditKey;
@@ -34,26 +36,29 @@ interface LevelEditState {
 }
 
 // Label UI per ciascun campo
-function getKeyLabel(key: DatiEditKey): string {
+function getKeyLabel(profile: DatiWbsProfile, key: DatiEditKey): string {
   if (key === "TariffaCodice") return "Codice tariffa";
   if (key === "PacchettoCodice") return "Codice pacchetto";
-  const cfg = DEFAULT_DATI_WBS_PROFILE.levels.find((lvl) => lvl.key === key);
+
+  const cfg = profile.levels.find((lvl) => lvl.key === key);
   return cfg?.label ?? key;
 }
 
 // Flag di obbligatorietà da profilo
-function isKeyRequired(key: DatiEditKey): boolean {
+function isKeyRequired(profile: DatiWbsProfile, key: DatiEditKey): boolean {
   if (key === "TariffaCodice") {
-    return DEFAULT_DATI_WBS_PROFILE.requireTariffaCodice;
+    return profile.requireTariffaCodice;
   }
   if (key === "PacchettoCodice") {
-    return false; // o in futuro: DEFAULT_DATI_WBS_PROFILE.requirePacchettoCodice ?? false;
+    return !!profile.requirePacchettoCodice; // per ora probabilmente false
   }
-  const cfg = DEFAULT_DATI_WBS_PROFILE.levels.find((lvl) => lvl.key === key);
+
+  const cfg = profile.levels.find((lvl) => lvl.key === key);
   return cfg?.required ?? false;
 }
 
 export const DatiWbsSelectionOverlay: React.FC = () => {
+  const [profile] = useDatiWbsProfile();
   const [selectionCount, setSelectionCount] = useState(0);
   const [levels, setLevels] = useState<OverlayLevelInfo[]>([]);
   const [isEditing, setIsEditing] = useState(false);
@@ -76,17 +81,19 @@ export const DatiWbsSelectionOverlay: React.FC = () => {
 
       setSelectionCount(selected.length);
 
+      const activeKeys = getActiveDatiKeys(profile);
+
       if (!selected.length) {
-        const emptyLevels: OverlayLevelInfo[] = ALL_DATI_KEYS.map((key) => ({
+        const emptyLevels: OverlayLevelInfo[] = activeKeys.map((key) => ({
           key,
-          label: getKeyLabel(key),
+          label: getKeyLabel(profile, key),
           valueLabel: "",
         }));
         setLevels(emptyLevels);
         return;
       }
 
-      const infos: OverlayLevelInfo[] = ALL_DATI_KEYS.map((key) => {
+      const infos: OverlayLevelInfo[] = activeKeys.map((key) => {
         const values: string[] = [];
 
         for (const item of selected) {
@@ -107,7 +114,7 @@ export const DatiWbsSelectionOverlay: React.FC = () => {
 
         return {
           key,
-          label: getKeyLabel(key),
+          label: getKeyLabel(profile, key),
           valueLabel,
         };
       });
@@ -122,7 +129,7 @@ export const DatiWbsSelectionOverlay: React.FC = () => {
       disposed = true;
       window.clearInterval(id);
     };
-  }, [isEditing]);
+  }, [isEditing, profile]);
 
   if (!levels.length && selectionCount === 0) {
     return null;
@@ -136,7 +143,7 @@ export const DatiWbsSelectionOverlay: React.FC = () => {
     const nextEditLevels: LevelEditState[] = levels.map((lvl) => {
       const isMixed = lvl.valueLabel === "varie";
       const initialValue = isMixed ? "" : (lvl.valueLabel || "");
-      const required = isKeyRequired(lvl.key);
+      const required = isKeyRequired(profile, lvl.key);
 
       return {
         key: lvl.key,
@@ -260,7 +267,7 @@ export const DatiWbsSelectionOverlay: React.FC = () => {
               <React.Fragment key={lvl.key}>
                 <div className="truncate text-[10px] text-slate-500">
                   {lvl.label}
-                  {isKeyRequired(lvl.key) ? " *" : ""}
+                  {isKeyRequired(profile, lvl.key) ? " *" : ""}
                 </div>
                 <div
                   className={[

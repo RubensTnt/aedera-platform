@@ -26,9 +26,11 @@ import {
 
 import type { WbsLevelKey } from "@core/bim/datiWbsProfile";
 import { getActiveModelId } from "@core/bim/modelRegistry";
+import { useDatiWbsProfile } from "../../hooks/useDatiWbsProfile";
 
 
 export const WbsTariffaView: React.FC = () => {
+  const [profile] = useDatiWbsProfile();
   const [status, setStatus] = useState<string | null>(null);
   const [activeModelId, setActiveModelId] = useState<string | null>(null);
   const [scan, setScan] = useState<DatiWbsScanResult | null>(null);
@@ -60,9 +62,9 @@ export const WbsTariffaView: React.FC = () => {
 
     setActiveModelId(modelId);
 
-    const result = scanModelDatiWbs(modelId);
+    const result = scanModelDatiWbs(modelId, profile);
     setScan(result);
-  }, []);
+  }, [profile]);
 
   const handleImportFromIfc = () => {
     if (!activeModelId) {
@@ -169,17 +171,18 @@ export const WbsTariffaView: React.FC = () => {
 
   // Heatmap
   useEffect(() => {
-    if (!heatmapEnabled) {
+    if (!heatmapEnabled || !activeModelId || !scan) {
       void clearDatiWbsHeatmap();
-      return;
-    }
-
-    if (!activeModelId || !scan) {
-      void clearDatiWbsHeatmap();
-      return;
+      return () => {
+        void clearDatiWbsHeatmap();
+      };
     }
 
     void applyDatiWbsHeatmap(activeModelId, scan);
+
+    return () => {
+      void clearDatiWbsHeatmap();
+    };
   }, [heatmapEnabled, activeModelId, scan]);
 
   return (
@@ -241,8 +244,8 @@ export const WbsTariffaView: React.FC = () => {
               ].join(" ")}
             />
             {heatmapEnabled
-              ? "Heatmap DATI_WBS attiva"
-              : "Attiva heatmap DATI_WBS"}
+              ? "Controllo  DATI_WBS attiva"
+              : "Attiva controllo DATI_WBS"}
           </button>
         </div>
 

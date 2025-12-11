@@ -3,11 +3,9 @@
 import type { DatiWbsProps, ElementRecord } from "./modelProperties";
 import { getAllElements, getDatiWbsProps } from "./modelProperties";
 import {
-  ALL_WBS_LEVEL_KEYS,
   type DatiWbsProfile,
   type DatiWbsValidationResult,
   type WbsLevelKey,
-  DEFAULT_DATI_WBS_PROFILE,
   validateDatiWbsForProfile,
   getWbsPathArray,
 } from "./datiWbsProfile";
@@ -108,15 +106,18 @@ export interface DatiWbsScanResult {
 export function classifyElementStatus(
   validation: DatiWbsValidationResult,
   dati: DatiWbsProps | undefined,
+  profile: DatiWbsProfile,
 ): DatiWbsElementStatus {
-  const hasAnyWbsValue =
-    ALL_WBS_LEVEL_KEYS.some((key) => {
-      const v = dati?.[key];
-      return typeof v === "string" && v.trim().length > 0;
-    }) || false;
+  const hasAnyEnabledWbsValue =
+    profile.levels
+      .filter((lvl) => lvl.enabled)
+      .some((lvl) => {
+        const v = dati?.[lvl.key];
+        return typeof v === "string" && v.trim().length > 0;
+      }) || false;
 
   const hasAnyIdentifier =
-    hasAnyWbsValue ||
+    hasAnyEnabledWbsValue ||
     validation.hasTariffaCodice ||
     validation.hasPacchettoCodice;
 
@@ -137,7 +138,7 @@ export function classifyElementStatus(
  */
 export function scanModelDatiWbs(
   modelId: string,
-  profile: DatiWbsProfile = DEFAULT_DATI_WBS_PROFILE,
+  profile: DatiWbsProfile,
 ): DatiWbsScanResult {
   const elements: ElementRecord[] = getAllElements(modelId) ?? [];
 
@@ -170,7 +171,7 @@ export function scanModelDatiWbs(
 
     const dati = getDatiWbsProps(modelId, localId);
     const validation = validateDatiWbsForProfile(dati, profile);
-    const status = classifyElementStatus(validation, dati);
+    const status = classifyElementStatus(validation, dati, profile);
     const wbsPath = getWbsPathArray(dati);
 
     // aggiorno contatori globali

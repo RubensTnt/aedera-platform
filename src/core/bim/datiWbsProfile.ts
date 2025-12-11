@@ -79,28 +79,21 @@ export interface DatiWbsProfile {
  */
 export const DEFAULT_DATI_WBS_PROFILE: DatiWbsProfile = {
   id: "default",
-  name: "Profilo base Aedera (WBS0–WBS3 obbligatorie)",
-  requireTariffaCodice: false,
-  requirePacchettoCodice: false,
+  name: "Profilo base Aedera (tutti i livelli attivi, WBS4–WBS10 obbligatorie)",
+  requireTariffaCodice: true,
+  requirePacchettoCodice: true,
   levels: ALL_WBS_LEVEL_KEYS.map((key, idx) => {
-    if (idx <= 3) {
-      // WBS0, WBS1, WBS2, WBS3
-      return {
-        key,
-        enabled: true,
-        required: true,
-        label: key,
-        description: `Livello WBS ${idx} (obbligatorio)`,
-      };
-    }
+    const enabled = true;
+    const required = idx >= 4; // WBS4..WBS10 obbligatorie, WBS0..WBS3 facoltative
 
-    // WBS4–WBS10 per ora non utilizzati
     return {
       key,
-      enabled: false,
-      required: false,
+      enabled,
+      required,
       label: key,
-      description: `Livello WBS ${idx} (non utilizzato nel profilo base)`,
+      description: required
+        ? `Livello WBS ${idx} (obbligatorio nel profilo base)`
+        : `Livello WBS ${idx} (facoltativo nel profilo base)`,
     };
   }),
 };

@@ -3,7 +3,7 @@ import { DatiWbsProfileSettingsPanel } from "./DatiWbsProfileSettingsPanel";
 
 export const ImpostazioniView: React.FC = () => {
   return (
-    <div className="h-full flex flex-col gap-3 text-sm text-slate-700">
+    <div className="h-full w-full flex flex-col gap-4 text-sm text-slate-700">
       <div className="flex items-center justify-between">
         <h2 className="text-base font-semibold text-slate-900">
           Impostazioni progetto
@@ -18,9 +18,9 @@ export const ImpostazioniView: React.FC = () => {
       </div>
 
       <section>
-        <h1 className="mb-3 text-xl font-semibold text-slate-900">
+        <h2 className="mb-3 text-base font-semibold text-slate-900">
           Parametri BIM
-        </h1>
+        </h2>
         <DatiWbsProfileSettingsPanel />
       </section>
     </div>
