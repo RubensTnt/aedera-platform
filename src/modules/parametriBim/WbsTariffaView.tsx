@@ -44,6 +44,10 @@ export const WbsTariffaView: React.FC = () => {
     WBS3: "STM_WBS_06_Livello / Piano",
   });
 
+  // Parametri IFC di origine per Codice Tariffa e Codice Pacchetto
+  const [tariffaSource, setTariffaSource] = useState<string>("STM_TAR_Code");
+  const [pacchettoSource, setPacchettoSource] = useState<string>("STM_PCK_Code");
+
   const handleChangeImportSource = (level: WbsLevelKey, value: string) => {
     setImportSources((prev) => ({
       ...prev,
@@ -74,29 +78,50 @@ export const WbsTariffaView: React.FC = () => {
       return;
     }
 
+    const activeLevelKeys = new Set(
+      profile.levels.filter((lvl) => lvl.enabled).map((lvl) => lvl.key),
+    );
+
     const cleaned: DatiWbsImportSourceMap = {};
+
     for (const [key, value] of Object.entries(importSources)) {
+      const wbsKey = key as WbsLevelKey;
+
+      // ignora livelli non attivi nel profilo
+      if (!activeLevelKeys.has(wbsKey)) continue;
+
       if (!value) continue;
-      if (!value.trim()) continue;
-      cleaned[key as keyof DatiWbsImportSourceMap] = value;
+      const trimmed = value.trim();
+      if (!trimmed) continue;
+
+      cleaned[wbsKey] = trimmed as string;
     }
 
-    if (!Object.keys(cleaned).length) {
+    const tariffaSourceParam = tariffaSource.trim();
+    const pacchettoSourceParam = pacchettoSource.trim();
+
+    const hasAnyWbs = Object.keys(cleaned).length > 0;
+    const hasTariffa = !!tariffaSourceParam;
+    const hasPacchetto = !!pacchettoSourceParam;
+
+    if (!hasAnyWbs && !hasTariffa && !hasPacchetto) {
       setStatus(
-        "Nessun parametro IFC di origine configurato. Compila almeno un campo di mapping (es. STM_WBS_00_Commessa).",
+        "Nessun parametro IFC di origine configurato. Compila almeno un campo di mapping (WBS, Codice tariffa o Codice pacchetto).",
       );
       return;
     }
 
     const result = importDatiWbsFromIfc(activeModelId, {
       sourceByLevel: cleaned,
+      tariffaSourceParam: hasTariffa ? tariffaSourceParam : undefined,
+      pacchettoSourceParam: hasPacchetto ? pacchettoSourceParam : undefined,
     });
 
     refreshScan();
 
     const lines: string[] = [];
     lines.push(
-      `Import WBS da IFC completato. Elementi aggiornati: ${result.updatedElements}.`,
+      `Import DATI_WBS da IFC completato. Elementi aggiornati: ${result.updatedElements}.`,
     );
 
     for (const lvl of result.levels) {
@@ -339,29 +364,64 @@ export const WbsTariffaView: React.FC = () => {
               Import automatico WBS da IFC
             </div>
             <div className="mt-1 text-[11px] text-slate-500">
-              Copia i parametri <code className="text-[11px]">STM_WBS_*</code>{" "}
-              nel Pset <code className="text-[11px]">DATI_WBS</code> senza
-              sovrascrivere i valori già compilati.
+              Copia i parametri <code className="text-[11px]">STM_WBS_*</code>,
+              <code className="text-[11px]">STM_TAR_*</code> e
+              <code className="text-[11px]">STM_PCK_*</code> nel Pset{" "}
+              <code className="text-[11px]">DATI_WBS</code> senza sovrascrivere i
+              valori già compilati.
             </div>
           </div>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
-          {(["WBS0", "WBS1", "WBS2", "WBS3"] as WbsLevelKey[]).map((level) => (
-            <div key={level} className="flex flex-col gap-1">
-              <label className="text-[11px] font-medium text-slate-700">
-                {level} · parametro IFC origine
-              </label>
-              <input
-                className="rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] text-slate-800 shadow-sm focus:outline-none focus:ring-1 focus:ring-sky-500 focus:border-sky-500"
-                value={importSources[level] ?? ""}
-                onChange={(e) =>
-                  handleChangeImportSource(level, e.target.value)
-                }
-                placeholder='Es. "STM_WBS_00_Commessa"'
-              />
-            </div>
-          ))}
+          {profile.levels
+            .filter((lvl) => lvl.enabled)
+            .map((lvl) => (
+              <div key={lvl.key} className="flex flex-col gap-1">
+                <label className="text-[11px] font-medium text-slate-700">
+                  {lvl.label ?? lvl.key}
+                  {lvl.required ? " *" : ""} · parametro IFC origine
+                </label>
+                <input
+                  className="rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] text-slate-800 shadow-sm focus:outline-none focus:ring-1 focus:ring-sky-500 focus:border-sky-500"
+                  value={importSources[lvl.key] ?? ""}
+                  onChange={(e) =>
+                    handleChangeImportSource(lvl.key, e.target.value)
+                  }
+                  placeholder='Es. "STM_WBS_00_Commessa"'
+                />
+              </div>
+            ))}
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 mt-1">
+          <div className="flex flex-col gap-1">
+            <label className="text-[11px] font-medium text-slate-700">
+              Codice tariffa
+              {profile.requireTariffaCodice ? " *" : ""} · parametro IFC
+              origine
+            </label>
+            <input
+              className="rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] text-slate-800 shadow-sm focus:outline-none focus:ring-1 focus:ring-sky-500 focus:border-sky-500"
+              value={tariffaSource}
+              onChange={(e) => setTariffaSource(e.target.value)}
+              placeholder='Es. "STM_TAR_Code"'
+            />
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label className="text-[11px] font-medium text-slate-700">
+              Codice pacchetto
+              {profile.requirePacchettoCodice ? " *" : ""} · parametro IFC
+              origine
+            </label>
+            <input
+              className="rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] text-slate-800 shadow-sm focus:outline-none focus:ring-1 focus:ring-sky-500 focus:border-sky-500"
+              value={pacchettoSource}
+              onChange={(e) => setPacchettoSource(e.target.value)}
+              placeholder='Es. "STM_PCK_Code"'
+            />
+          </div>
         </div>
 
         <div className="flex justify-end mt-2">

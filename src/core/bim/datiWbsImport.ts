@@ -26,6 +26,8 @@ export type DatiWbsImportSourceMap = Partial<Record<WbsLevelKey, string>>;
 export interface DatiWbsImportConfig {
   sourceByLevel: DatiWbsImportSourceMap;
   profile?: DatiWbsProfile;
+  tariffaSourceParam?: string;
+  pacchettoSourceParam?: string;
 }
 
 export interface DatiWbsImportLevelStats {
@@ -131,6 +133,7 @@ export function importDatiWbsFromIfc(
     const patch: Partial<DatiWbsProps> = {};
     let elementChanged = false;
 
+    // 1) IMPORT WBS per tutti i livelli attivi nel profilo
     for (const level of ALL_WBS_LEVEL_KEYS) {
       const sourceParam = config.sourceByLevel[level];
       const stats = levelStatsMap.get(level);
@@ -163,6 +166,48 @@ export function importDatiWbsFromIfc(
       patch[level] = ifcValue;
       elementChanged = true;
       stats.filledFromIfc += 1;
+    }
+    
+    // 2) IMPORT Codice Tariffa (se configurato)
+    if (config.tariffaSourceParam && config.tariffaSourceParam.trim()) {
+      const currentTariffa = current?.TariffaCodice;
+      const hasTariffa =
+        typeof currentTariffa === "string" &&
+        currentTariffa.trim().length > 0;
+
+      // non sovrascriviamo mai un Codice tariffa già presente in DATI_WBS
+      if (!hasTariffa) {
+        const ifcTariffa = getIfcParamValueFromElement(
+          psets as any,
+          config.tariffaSourceParam,
+        );
+
+        if (ifcTariffa) {
+          patch.TariffaCodice = ifcTariffa;
+          elementChanged = true;
+        }
+      }
+    }
+
+    // 3) IMPORT Codice Pacchetto (se configurato)
+    if (config.pacchettoSourceParam && config.pacchettoSourceParam.trim()) {
+      const currentPacchetto = current?.PacchettoCodice;
+      const hasPacchetto =
+        typeof currentPacchetto === "string" &&
+        currentPacchetto.trim().length > 0;
+
+      // anche qui: non sovrascriviamo valori già compilati
+      if (!hasPacchetto) {
+        const ifcPacchetto = getIfcParamValueFromElement(
+          psets as any,
+          config.pacchettoSourceParam,
+        );
+
+        if (ifcPacchetto) {
+          patch.PacchettoCodice = ifcPacchetto;
+          elementChanged = true;
+        }
+      }
     }
 
     if (elementChanged) {
