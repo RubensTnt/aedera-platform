@@ -62,7 +62,12 @@ export interface DatiWbsProfile {
   id: string;
   name: string;
   levels: WbsLevelConfig[];
+
+  /** Se true, TariffaCodice è obbligatoria per considerare l'elemento "valido" */
   requireTariffaCodice: boolean;
+
+  /** Se true, PacchettoCodice è obbligatorio (per ora lo terremo false nel profilo default) */
+  requirePacchettoCodice?: boolean;
 }
 
 /**
@@ -76,6 +81,7 @@ export const DEFAULT_DATI_WBS_PROFILE: DatiWbsProfile = {
   id: "default",
   name: "Profilo base Aedera (WBS0–WBS3 obbligatorie)",
   requireTariffaCodice: false,
+  requirePacchettoCodice: false,
   levels: ALL_WBS_LEVEL_KEYS.map((key, idx) => {
     if (idx <= 3) {
       // WBS0, WBS1, WBS2, WBS3
@@ -117,6 +123,12 @@ export interface DatiWbsValidationResult {
 
   /** true se il profilo richiede TariffaCodice ma il campo è vuoto */
   tariffaCodiceMissingButRequired: boolean;
+
+  /** true se PacchettoCodice è valorizzata (non solo whitespace) */
+  hasPacchettoCodice: boolean;
+
+  /** true se il profilo richiede PacchettoCodice ma il campo è vuoto */
+  pacchettoCodiceMissingButRequired: boolean;
 
   /**
    * Percentuale di completamento sui livelli WBS “enabled”.
@@ -173,11 +185,17 @@ export function validateDatiWbsForProfile(
   const tariffaCodiceMissingButRequired =
     profile.requireTariffaCodice && !hasTariffaCodice;
 
+  const hasPacchettoCodice = isNonEmpty(dati?.PacchettoCodice ?? null);
+  const pacchettoCodiceMissingButRequired =
+    !!profile.requirePacchettoCodice && !hasPacchettoCodice;
+
   const completionRatio =
     enabledCount > 0 ? filledEnabledCount / enabledCount : 1;
 
   const isValid =
-    missingRequiredLevels.length === 0 && !tariffaCodiceMissingButRequired;
+    missingRequiredLevels.length === 0 &&
+    !tariffaCodiceMissingButRequired &&
+    !pacchettoCodiceMissingButRequired;
 
   return {
     isValid,
@@ -185,6 +203,8 @@ export function validateDatiWbsForProfile(
     filledButDisabledLevels,
     hasTariffaCodice,
     tariffaCodiceMissingButRequired,
+    hasPacchettoCodice,
+    pacchettoCodiceMissingButRequired,
     completionRatio,
   };
 }

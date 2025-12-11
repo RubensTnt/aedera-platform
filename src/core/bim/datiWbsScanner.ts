@@ -115,7 +115,12 @@ export function classifyElementStatus(
       return typeof v === "string" && v.trim().length > 0;
     }) || false;
 
-  if (!hasAnyWbsValue && !validation.hasTariffaCodice) {
+  const hasAnyIdentifier =
+    hasAnyWbsValue ||
+    validation.hasTariffaCodice ||
+    validation.hasPacchettoCodice;
+
+  if (!hasAnyIdentifier) {
     return "empty";
   }
 

@@ -15,6 +15,7 @@ type DatiEditKey = keyof DatiWbsProps;
 const ALL_DATI_KEYS: DatiEditKey[] = [
   ...ALL_WBS_LEVEL_KEYS,
   "TariffaCodice",
+  "PacchettoCodice",
 ];
 
 interface OverlayLevelInfo {
@@ -35,6 +36,7 @@ interface LevelEditState {
 // Label UI per ciascun campo
 function getKeyLabel(key: DatiEditKey): string {
   if (key === "TariffaCodice") return "Codice tariffa";
+  if (key === "PacchettoCodice") return "Codice pacchetto";
   const cfg = DEFAULT_DATI_WBS_PROFILE.levels.find((lvl) => lvl.key === key);
   return cfg?.label ?? key;
 }
@@ -43,6 +45,9 @@ function getKeyLabel(key: DatiEditKey): string {
 function isKeyRequired(key: DatiEditKey): boolean {
   if (key === "TariffaCodice") {
     return DEFAULT_DATI_WBS_PROFILE.requireTariffaCodice;
+  }
+  if (key === "PacchettoCodice") {
+    return false; // o in futuro: DEFAULT_DATI_WBS_PROFILE.requirePacchettoCodice ?? false;
   }
   const cfg = DEFAULT_DATI_WBS_PROFILE.levels.find((lvl) => lvl.key === key);
   return cfg?.required ?? false;

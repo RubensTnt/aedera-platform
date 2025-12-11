@@ -539,7 +539,12 @@ export interface DatiWbsProps {
   WBS8?: string | null;
   WBS9?: string | null;
   WBS10?: string | null;
+
+  /** Codice tariffa associato all'elemento */
   TariffaCodice?: string | null;
+
+  /** Codice pacchetto associato all'elemento */
+  PacchettoCodice?: string | null;
 }
 
 /**
@@ -568,6 +573,11 @@ export function getDatiWbsProps(
   if ("TariffaCodice" in pset) {
     const raw = (pset as any)["TariffaCodice"];
     result.TariffaCodice = raw == null ? null : String(raw);
+  }
+
+  if ("PacchettoCodice" in pset) {
+    const raw = (pset as any)["PacchettoCodice"];
+    result.PacchettoCodice = raw == null ? null : String(raw);
   }
 
   return result;
@@ -627,9 +637,10 @@ export function setDatiWbsProps(
   for (let level = 0; level <= 10; level++) {
     applyKey(`WBS${level}` as keyof DatiWbsProps);
   }
-  applyKey("TariffaCodice");
 
-  // Ritorniamo la vista normalizzata aggiornata
+  applyKey("TariffaCodice");
+  applyKey("PacchettoCodice");
+
   return getDatiWbsProps(modelId, localId) ?? {};
 }
 
@@ -849,6 +860,41 @@ export function getElementTariffCode(
   modelId: string,
   localId: number,
   config: TariffMappingConfig = DEFAULT_TARIFF_MAPPING,
+): string | undefined {
+  const element = getElementRecord(modelId, localId);
+  if (!element) return undefined;
+
+  const psetName = config.psetName?.trim();
+
+  const psetsToScan = psetName
+    ? [element.psets[psetName]].filter(Boolean)
+    : Object.values(element.psets);
+
+  for (const pset of psetsToScan) {
+    if (!pset) continue;
+    const raw = pset[config.codeProp];
+    if (raw == null) continue;
+    const value = String(raw).trim();
+    if (value) return value;
+  }
+
+  return undefined;
+}
+
+/**
+ * Restituisce il codice pacchetto di un elemento, oppure undefined.
+ *
+ * Se config.psetName è stringa vuota, cerchiamo il parametro in QUALSIASI Pset.
+ */
+export const DATI_WBS_PACKAGE_MAPPING: TariffMappingConfig = {
+  psetName: DATI_WBS_PSET_NAME,
+  codeProp: "PacchettoCodice",
+};
+
+export function getElementPackageCode(
+  modelId: string,
+  localId: number,
+  config: TariffMappingConfig = DATI_WBS_PACKAGE_MAPPING,
 ): string | undefined {
   const element = getElementRecord(modelId, localId);
   if (!element) return undefined;
