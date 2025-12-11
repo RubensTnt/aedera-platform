@@ -8,6 +8,7 @@ import {
   listPsetNames,
   listPsetPropertyNames,
 } from "@core/bim/modelProperties";
+import { upsertIfcModel } from "./modelRegistry";
 
 /**
  * Carica un file IFC selezionato dall'utente e lo converte in Fragments.
@@ -46,16 +47,17 @@ export async function loadIfcFromFile(file: File): Promise<void> {
   });
   console.timeEnd("[IFC Loader] load");
 
-  // 🔹 Ora abbiamo il FragmentsModel restituito dal loader
-  // FragmentsManager lo aggancerà alla scena (grazie alla config in thatopen.ts)
-  // Qui inneschiamo l'estrazione info modello
+  // 🔹 Estrazione proprietà e indicizzazione
   try {
     await extractPropertiesForModel(model);
   } catch (error) {
-    console.warn("[IFC Loader] Errore durante extractPropertiesForModel:", error);
+    console.warn(
+      "[IFC Loader] Errore durante extractPropertiesForModel:",
+      error,
+    );
   }
 
-    // 🔎 Debug: riepilogo categorie e Pset disponibili per il modello caricato
+  // 🔎 Debug + registrazione nel Model Registry
   try {
     const modelId = model.modelId;
     const ifcTypes = listIfcTypes(modelId);
@@ -73,7 +75,6 @@ export async function loadIfcFromFile(file: File): Promise<void> {
       psets: psetNames,
     });
 
-    // per i primi 3 Pset mostriamo anche le proprietà disponibili
     for (const psetName of psetNames.slice(0, 3)) {
       const propNames = listPsetPropertyNames(modelId, psetName);
       console.log("[PropertyEngine] Pset dettaglio:", {
@@ -82,8 +83,13 @@ export async function loadIfcFromFile(file: File): Promise<void> {
         properties: propNames,
       });
     }
-  } catch (error) {
-    console.warn("[IFC Loader] Errore durante il riepilogo PropertyEngine:", error);
-  }
 
+    // ✅ registra/aggiorna il modello nel registry (nome file + numero elementi)
+    upsertIfcModel(modelId, file.name);
+  } catch (error) {
+    console.warn(
+      "[IFC Loader] Errore durante il riepilogo PropertyEngine / ModelRegistry:",
+      error,
+    );
+  }
 }
