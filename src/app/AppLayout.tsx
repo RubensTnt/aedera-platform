@@ -1,179 +1,141 @@
 // src/app/AppLayout.tsx
 
-import React, {
-  useState,
-  useRef,
-  useCallback,
-  useEffect,
-} from "react";
-import { ViewerContainer } from "@ui/layout/ViewerContainer";
+import React from "react";
 import { Link, useLocation } from "react-router-dom";
-import { PoWorkspace } from "@ui/po/PoWorkspace";
+import { ViewerContainer } from "@ui/layout/ViewerContainer";
+
+type NavItem = {
+  label: string;
+  path: string;
+};
+
+const PRIMARY_NAV: NavItem[] = [
+  { label: "Modelli", path: "/modelli" },
+  { label: "Progettazione", path: "/progettazione" },
+  { label: "Parametri BIM", path: "/parametri-bim" },
+  { label: "Computo & Quantità", path: "/contabilita" },
+  { label: "Programmazione", path: "/programmazione" },
+];
+
+const SECONDARY_NAV: NavItem[] = [
+  { label: "Esportazioni / Report", path: "/report" },
+  { label: "Impostazioni", path: "/impostazioni" },
+];
 
 export const AppLayout: React.FC<{ children?: React.ReactNode }> = ({
   children,
 }) => {
   const location = useLocation();
 
-  const isParametriBim = location.pathname === "/parametri-bim";
+  const isActive = (path: string) =>
+    location.pathname === path ||
+    (path !== "/" && location.pathname.startsWith(path));
 
-  const navItems = [
-    { path: "/progettazione", label: "Progettazione" },
-    { path: "/parametri-bim", label: "Parametri BIM" },
-    { path: "/gare", label: "Gare" },
-    { path: "/contabilita", label: "Contabilità" },
-    { path: "/programmazione", label: "Programmazione" },
-    { path: "/direzione-tecnica", label: "Direzione Tecnica" },
-  ];
-
-  // larghezza pannello destro (in px), regolabile da UI
-  const [rightWidth, setRightWidth] = useState<number>(320);
-  const isResizingRef = useRef(false);
-  const lastXRef = useRef<number | null>(null);
-
-  const handleResizeStart = useCallback(
-    (event: React.MouseEvent<HTMLDivElement>) => {
-      isResizingRef.current = true;
-      lastXRef.current = event.clientX;
-      event.preventDefault();
-    },
-    [],
-  );
-
-  useEffect(() => {
-    const handleMouseMove = (event: MouseEvent) => {
-      if (!isResizingRef.current || lastXRef.current == null) return;
-
-      const dx = event.clientX - lastXRef.current;
-      lastXRef.current = event.clientX;
-
-      setRightWidth((prev) => {
-        const next = prev - dx; // se trascini verso destra, pannello più largo
-        const min = 220;
-        const max = 600;
-        return Math.min(Math.max(next, min), max);
-      });
-    };
-
-    const handleMouseUp = () => {
-      isResizingRef.current = false;
-      lastXRef.current = null;
-    };
-
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
-
-    return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
-    };
-  }, []);
+  const showDatiWbsOverlay = location.pathname.startsWith("/parametri-bim");
 
   return (
-    <div
-      className="app-shell"
-      style={{ display: "grid", gridTemplateRows: "auto 1fr" }}
-    >
-      {/* Header */}
-      <header
-        style={{
-          padding: "0.5rem 1rem",
-          borderBottom: "1px solid #333",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: "1rem",
-        }}
-      >
-        <strong>Aedera Platform</strong>
+    <div className="h-screen w-screen flex flex-col bg-slate-100 text-slate-900">
+      {/* TOP BAR */}
+      <header className="h-12 flex items-center justify-between px-4 border-b border-slate-200 bg-white">
+        <div className="flex items-center gap-3">
+          <div className="h-7 w-7 rounded bg-sky-600 flex items-center justify-center text-xs font-semibold text-white">
+            A
+          </div>
+          <div className="flex flex-col leading-tight">
+            <span className="text-sm font-semibold">Aedera Platform</span>
+            <span className="text-[11px] text-slate-500">
+              Digital Twin · BIM · WBS
+            </span>
+          </div>
+        </div>
 
-        <nav style={{ display: "flex", gap: "0.75rem", fontSize: 14 }}>
-          {navItems.map((item) => {
-            const active = location.pathname === item.path;
-            return (
-              <Link
-                key={item.path}
-                to={item.path}
-                style={{
-                  color: active ? "#facc15" : "#f5f5f5",
-                  textDecoration: "none",
-                  borderBottom: active
-                    ? "2px solid #facc15"
-                    : "2px solid transparent",
-                  paddingBottom: "2px",
-                }}
-              >
-                {item.label}
-              </Link>
-            );
-          })}
-        </nav>
+        <div className="flex items-center gap-3 text-[11px] text-slate-500">
+          <button
+            type="button"
+            className="px-2 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50"
+          >
+            Salva
+          </button>
+          <div className="h-7 w-7 rounded-full bg-slate-200 flex items-center justify-center text-[11px] font-semibold">
+            U
+          </div>
+        </div>
       </header>
 
-      {/* Body */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "280px 1fr",
-          height: "calc(100vh - 48px)",
-        }}
-      >
-        {/* Left panel */}
-        <aside
-          style={{
-            borderRight: "1px solid #333",
-            padding: "0.5rem",
-            overflowY: "auto",
-          }}
-        >
-          {children}
+      {/* BODY */}
+      <div className="flex flex-1 min-h-0">
+        {/* SIDEBAR */}
+        <aside className="w-64 border-r border-slate-200 bg-white flex flex-col">
+          <div className="px-3 py-3 border-b border-slate-200">
+            <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+              Moduli
+            </div>
+          </div>
+
+          <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-6 text-[13px]">
+            <div className="space-y-1">
+              {PRIMARY_NAV.map((item) => (
+                <Link
+                  key={item.path}
+                  to={item.path}
+                  className={[
+                    "flex items-center gap-2 px-2 py-1.5 rounded-md border text-[13px]",
+                    isActive(item.path)
+                      ? "border-sky-500 bg-sky-50 text-sky-700"
+                      : "border-transparent text-slate-600 hover:bg-slate-50 hover:text-slate-900",
+                  ].join(" ")}
+                >
+                  <span className="h-5 w-5 rounded bg-slate-100 flex items-center justify-center text-[11px] text-slate-500">
+                    {item.label[0]}
+                  </span>
+                  <span>{item.label}</span>
+                </Link>
+              ))}
+            </div>
+
+            <div className="space-y-1">
+              <div className="px-1 text-[11px] uppercase tracking-wide text-slate-400">
+                Amministrazione
+              </div>
+              {SECONDARY_NAV.map((item) => (
+                <Link
+                  key={item.path}
+                  to={item.path}
+                  className={[
+                    "flex items-center gap-2 px-2 py-1.5 rounded-md border text-[13px]",
+                    isActive(item.path)
+                      ? "border-sky-500 bg-sky-50 text-sky-700"
+                      : "border-transparent text-slate-600 hover:bg-slate-50 hover:text-slate-900",
+                  ].join(" ")}
+                >
+                  <span className="h-5 w-5 rounded bg-slate-100 flex items-center justify-center text-[11px] text-slate-500">
+                    {item.label[0]}
+                  </span>
+                  <span>{item.label}</span>
+                </Link>
+              ))}
+            </div>
+          </nav>
+
+          <div className="border-t border-slate-200 px-3 py-2 text-[11px] text-slate-400">
+            Aedera · v0.1 · UI layout demo
+          </div>
         </aside>
 
-        {/* Center: viewer + resizer + right panel */}
-        <div
-          style={{
-            display: "flex",
-            minWidth: 0,
-            minHeight: 0,
-            height: "100%",
-            overflow: "hidden",
-          }}
-        >
-          {/* Viewer */}
-          <main
-            style={{
-              flex: "1 1 auto",
-              minWidth: 0,
-            }}
-          >
-            <ViewerContainer showDatiWbsOverlay={isParametriBim} />
-          </main>
+        {/* MAIN AREA */}
+        <main className="flex-1 flex flex-col min-h-0">
+          {/* VIEWPORT 3D */}
+          <section className="flex-1 min-h-[260px] border-b border-slate-200 bg-slate-200 relative">
+            <ViewerContainer showDatiWbsOverlay={showDatiWbsOverlay} />
+          </section>
 
-          {/* Resizer handle */}
-          <div
-            style={{
-              width: "4px",
-              cursor: "col-resize",
-              backgroundColor: "#333",
-            }}
-            onMouseDown={handleResizeStart}
-          />
-
-          {/* Right panel: workspace PO completo */}
-          <aside
-            style={{
-              width: rightWidth,
-              borderLeft: "1px solid #333",
-              padding: "0.5rem",
-              display: "flex",
-              flexDirection: "column",
-              overflowY: "auto",
-              minHeight: 0,
-            }}
-          >
-            <PoWorkspace />
-          </aside>
-        </div>
+          {/* PANNELLO INFERIORE (MODULO CORRENTE) */}
+          <section className="h-72 min-h-[220px] bg-slate-100 px-4 py-3 overflow-y-auto">
+            <div className="h-full rounded-xl border border-slate-200 bg-white shadow-sm p-3">
+              {children}
+            </div>
+          </section>
+        </main>
       </div>
     </div>
   );

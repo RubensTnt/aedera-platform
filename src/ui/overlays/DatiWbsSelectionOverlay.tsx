@@ -207,236 +207,168 @@ export const DatiWbsSelectionOverlay: React.FC = () => {
     }
   };
 
+  const hasErrors =
+    isEditing &&
+    editLevels?.some((lvl) => lvl.required && !lvl.value.trim());
+
   return (
-    <div
-      style={{
-        position: "absolute",
-        left: 8,
-        top: 8,
-        zIndex: 20,
-        backgroundColor: "rgba(15,15,15,0.92)",
-        border: "1px solid #444",
-        borderRadius: 4,
-        padding: "6px 8px 8px",
-        maxWidth: 280,
-        fontSize: 11,
-        color: "#f5f5f5",
-        pointerEvents: "auto",
-      }}
-    >
-      {/* Header */}
-      <div
-        style={{
-          marginBottom: 6,
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          gap: 8,
-        }}
-      >
-        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-          <span style={{ fontWeight: 600 }}>DATI_WBS selezione</span>
-          <span style={{ fontSize: 10, color: "#a3a3a3" }}>
-            {hasSelection
-              ? `${selectionCount} elemento${
-                  selectionCount === 1 ? "" : "i"
-                } selezionato${
-                  selectionCount === 1 ? "" : "i"
-                }`
-              : "Nessuna selezione"}
-          </span>
+    <div className="absolute left-3 top-3 z-20 w-[320px] text-[11px] text-slate-800 pointer-events-auto">
+      <div className="rounded-xl border border-slate-200 bg-white/95 shadow-lg backdrop-blur-sm px-3 py-2.5">
+        {/* Header */}
+        <div className="mb-2 flex items-start justify-between gap-2">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-[12px] font-semibold text-slate-900">
+              DATI_WBS selezione
+            </span>
+            <span className="text-[10px] text-slate-500">
+              {hasSelection
+                ? `${selectionCount} elemento${
+                    selectionCount === 1 ? "" : "i"
+                  } selezionato${
+                    selectionCount === 1 ? "" : "i"
+                  }`
+                : "Nessuna selezione"}
+            </span>
+          </div>
+
+          {!isEditing && (
+            <button
+              type="button"
+              onClick={handleStartEdit}
+              disabled={!hasSelection}
+              className={[
+                "inline-flex items-center rounded-md border px-2 py-[3px] text-[10px] font-medium",
+                hasSelection
+                  ? "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                  : "border-slate-200 bg-slate-50 text-slate-400 cursor-default",
+              ].join(" ")}
+            >
+              Modifica
+            </button>
+          )}
         </div>
 
+        {/* Read-only */}
         {!isEditing && (
-          <button
-            type="button"
-            onClick={handleStartEdit}
-            disabled={!hasSelection}
-            style={{
-              fontSize: 10,
-              padding: "2px 6px",
-              borderRadius: 3,
-              border: "1px solid #555",
-              backgroundColor: hasSelection ? "#27272a" : "#18181b",
-              color: hasSelection ? "#e5e5e5" : "#52525b",
-              cursor: hasSelection ? "pointer" : "default",
-            }}
-          >
-            Modifica
-          </button>
+          <div className="grid grid-cols-[auto,1fr] gap-x-2 gap-y-1">
+            {levels.map((lvl) => (
+              <React.Fragment key={lvl.key}>
+                <div className="truncate text-[10px] text-slate-500">
+                  {lvl.label}
+                  {isKeyRequired(lvl.key) ? " *" : ""}
+                </div>
+                <div
+                  className={[
+                    "truncate font-mono",
+                    lvl.valueLabel === "varie"
+                      ? "text-amber-500"
+                      : "text-slate-800",
+                  ].join(" ")}
+                  title={
+                    lvl.valueLabel === "varie"
+                      ? "Valori diversi nella selezione"
+                      : lvl.valueLabel || ""
+                  }
+                >
+                  {lvl.valueLabel === "varie"
+                    ? "varie"
+                    : lvl.valueLabel || "—"}
+                </div>
+              </React.Fragment>
+            ))}
+          </div>
+        )}
+
+        {/* Editing */}
+        {isEditing && editLevels && (
+          <>
+            <div className="max-h-72 overflow-y-auto pr-1">
+              <div className="mt-1 grid grid-cols-[auto,1fr] gap-x-2 gap-y-2">
+                {editLevels.map((lvl) => {
+                  const isEmpty = !lvl.value.trim();
+                  const showError = lvl.required && isEmpty;
+
+                  return (
+                    <React.Fragment key={lvl.key}>
+                      <label
+                        className="pt-[3px] text-[10px] text-slate-500"
+                        htmlFor={`wbs-${lvl.key}`}
+                      >
+                        {lvl.label}
+                        {lvl.required ? " *" : ""}
+                      </label>
+                      <div className="flex flex-col gap-1">
+                        <input
+                          id={`wbs-${lvl.key}`}
+                          type="text"
+                          value={lvl.value}
+                          onChange={(e) =>
+                            handleChangeLevel(lvl.key, e.target.value)
+                          }
+                          className={[
+                            "w-full rounded-md border px-2 py-[2px] text-[11px] font-mono bg-white",
+                            "focus:outline-none focus:ring-1",
+                            showError
+                              ? "border-rose-400 focus:ring-rose-400"
+                              : "border-slate-300 focus:ring-sky-500 focus:border-sky-500",
+                          ].join(" ")}
+                          placeholder={
+                            lvl.isMixed
+                              ? "varie (lascia vuoto per non cambiare)"
+                              : ""
+                          }
+                        />
+                        {lvl.isMixed && (
+                          <span className="text-[9px] text-amber-500">
+                            nella selezione ci sono valori diversi
+                          </span>
+                        )}
+                        {showError && (
+                          <span className="text-[9px] text-rose-500">
+                            campo obbligatorio
+                          </span>
+                        )}
+                      </div>
+                    </React.Fragment>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Footer azioni */}
+            <div className="mt-2 flex items-center justify-between gap-2">
+              {hasErrors && (
+                <div className="text-[9px] text-rose-500">
+                  Compila tutti i campi obbligatori contrassegnati con *.
+                </div>
+              )}
+              <div className="ml-auto flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleCancelEdit}
+                  disabled={isApplying}
+                  className="inline-flex items-center rounded-md border border-slate-300 bg-white px-2 py-[3px] text-[10px] font-medium text-slate-600 hover:bg-slate-50"
+                >
+                  Annulla
+                </button>
+                <button
+                  type="button"
+                  onClick={handleApply}
+                  disabled={isApplying}
+                  className={[
+                    "inline-flex items-center rounded-md px-3 py-[3px] text-[10px] font-semibold text-white shadow-sm",
+                    isApplying
+                      ? "bg-amber-500"
+                      : "bg-amber-400 hover:bg-amber-500",
+                  ].join(" ")}
+                >
+                  {isApplying ? "Aggiornamento..." : "Aggiorna selezione"}
+                </button>
+              </div>
+            </div>
+          </>
         )}
       </div>
-
-      {/* Read-only */}
-      {!isEditing && (
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "auto 1fr",
-            columnGap: 6,
-            rowGap: 2,
-          }}
-        >
-          {levels.map((lvl) => (
-            <React.Fragment key={lvl.key}>
-              <div style={{ color: "#a3a3a3" }}>
-                {lvl.label}
-                {isKeyRequired(lvl.key) ? " *" : ""}
-              </div>
-              <div
-                style={{
-                  fontFamily: "monospace",
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  color: lvl.valueLabel === "varie" ? "#fbbf24" : "#e5e5e5",
-                }}
-                title={
-                  lvl.valueLabel === "varie"
-                    ? "Valori diversi nella selezione"
-                    : lvl.valueLabel || ""
-                }
-              >
-                {lvl.valueLabel === "varie"
-                  ? "varie"
-                  : lvl.valueLabel || "—"}
-              </div>
-            </React.Fragment>
-          ))}
-        </div>
-      )}
-
-      {/* Editing */}
-      {isEditing && editLevels && (
-        <>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "auto 1fr",
-              columnGap: 6,
-              rowGap: 4,
-            }}
-          >
-            {editLevels.map((lvl) => {
-              const isEmpty = !lvl.value.trim();
-              const showError = lvl.required && isEmpty;
-
-              return (
-                <React.Fragment key={lvl.key}>
-                  <label
-                    style={{
-                      color: "#a3a3a3",
-                      paddingTop: 2,
-                    }}
-                    htmlFor={`wbs-${lvl.key}`}
-                  >
-                    {lvl.label}
-                    {lvl.required ? " *" : ""}
-                  </label>
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 2,
-                    }}
-                  >
-                    <input
-                      id={`wbs-${lvl.key}`}
-                      type="text"
-                      value={lvl.value}
-                      onChange={(e) =>
-                        handleChangeLevel(lvl.key, e.target.value)
-                      }
-                      style={{
-                        width: "100%",
-                        fontSize: 11,
-                        padding: "2px 4px",
-                        borderRadius: 3,
-                        border: `1px solid ${
-                          showError ? "#dc2626" : "#52525b"
-                        }`,
-                        backgroundColor: "#18181b",
-                        color: "#f5f5f5",
-                        fontFamily: "monospace",
-                        outline: "none",
-                      }}
-                      placeholder={
-                        lvl.isMixed
-                          ? "varie (lascia vuoto per non cambiare)"
-                          : ""
-                      }
-                    />
-                    {lvl.isMixed && (
-                      <span
-                        style={{
-                          fontSize: 9,
-                          color: "#fbbf24",
-                        }}
-                      >
-                        nella selezione ci sono valori diversi
-                      </span>
-                    )}
-                    {showError && (
-                      <span
-                        style={{
-                          fontSize: 9,
-                          color: "#fca5a5",
-                        }}
-                      >
-                        campo obbligatorio
-                      </span>
-                    )}
-                  </div>
-                </React.Fragment>
-              );
-            })}
-          </div>
-
-          {/* Footer azioni */}
-          <div
-            style={{
-              marginTop: 8,
-              display: "flex",
-              justifyContent: "flex-end",
-              gap: 6,
-            }}
-          >
-            <button
-              type="button"
-              onClick={handleCancelEdit}
-              disabled={isApplying}
-              style={{
-                fontSize: 10,
-                padding: "2px 6px",
-                borderRadius: 3,
-                border: "1px solid #52525b",
-                backgroundColor: "#18181b",
-                color: "#e5e5e5",
-                cursor: "pointer",
-              }}
-            >
-              Annulla
-            </button>
-            <button
-              type="button"
-              onClick={handleApply}
-              disabled={isApplying}
-              style={{
-                fontSize: 10,
-                padding: "2px 8px",
-                borderRadius: 3,
-                border: "1px solid #facc15",
-                backgroundColor: isApplying ? "#854d0e" : "#eab308",
-                color: "#111827",
-                fontWeight: 600,
-                cursor: "pointer",
-              }}
-            >
-              {isApplying ? "Aggiornamento..." : "Aggiorna selezione"}
-            </button>
-          </div>
-        </>
-      )}
     </div>
   );
 };

@@ -1,5 +1,3 @@
-// src/modules/progettazione/ProgettazioneView.tsx
-
 import React, { useCallback, useState } from "react";
 import { loadIfcFromFile } from "@core/bim/ifcLoader";
 
@@ -21,7 +19,9 @@ export const ProgettazioneView: React.FC = () => {
         await loadIfcFromFile(file);
       } catch (e) {
         console.error(e);
-        setError("Errore durante il caricamento del file IFC. Controlla la console.");
+        setError(
+          "Errore durante il caricamento del file IFC. Controlla la console.",
+        );
       } finally {
         setLoading(false);
       }
@@ -30,31 +30,36 @@ export const ProgettazioneView: React.FC = () => {
   );
 
   return (
-    <div style={{ color: "#f5f5f5", fontSize: 14 }}>
-      <h2>View: Progettazione (QA/QC)</h2>
-      <p>Qui andranno i pannelli per clash, regole proprietà, ecc.</p>
+    <div className="h-full flex flex-col gap-3 text-sm text-slate-700">
+      <div className="flex items-center justify-between">
+        <h2 className="text-base font-semibold text-slate-900">
+          View: Progettazione (QA/QC)
+        </h2>
+        <span className="text-xs text-slate-500">
+          Qui andranno i pannelli per clash, regole proprietà, ecc.
+        </span>
+      </div>
 
-      <div style={{ marginTop: "1rem" }}>
-        <label style={{ display: "block", marginBottom: "0.5rem" }}>
-          <strong>Carica modello IFC</strong>
+      <div className="mt-2 space-y-2">
+        <label className="block text-xs font-medium text-slate-600">
+          Carica modello IFC
         </label>
         <input
           type="file"
           accept=".ifc"
           onChange={handleFileChange}
           disabled={loading}
+          className="text-xs"
         />
         {lastFileName && (
-          <p style={{ marginTop: "0.5rem" }}>
+          <p className="text-xs text-slate-500">
             Ultimo file selezionato: <em>{lastFileName}</em>
           </p>
         )}
-        {loading && <p>Caricamento in corso...</p>}
-        {error && (
-          <p style={{ color: "#ff8080" }}>
-            {error}
-          </p>
+        {loading && (
+          <p className="text-xs text-sky-600">Caricamento in corso...</p>
         )}
+        {error && <p className="text-xs text-red-500">{error}</p>}
       </div>
     </div>
   );

@@ -149,16 +149,10 @@ export const WbsTariffaView: React.FC = () => {
   }, [refreshScan]);
 
   // Ricalcola automaticamente scan (e quindi heatmap, se attiva)
-  // quando qualche altro componente aggiorna DATI_WBS
   useEffect(() => {
     if (typeof window === "undefined") return;
 
     const handler = (event: Event) => {
-      // Se volessimo filtrare per modelId:
-      // const detail = (event as CustomEvent<{ modelIds?: string[] }>).detail;
-      // if (detail?.modelIds && activeModelId && !detail.modelIds.includes(activeModelId)) {
-      //   return;
-      // }
       refreshScan();
     };
 
@@ -187,97 +181,109 @@ export const WbsTariffaView: React.FC = () => {
   }, [heatmapEnabled, activeModelId, scan]);
 
   return (
-    <div className="h-full w-full flex flex-col gap-4">
+    <div className="h-full w-full flex flex-col gap-4 text-sm text-slate-700">
       {/* HEADER */}
-      <div>
-        <h2 className="text-lg font-semibold">
-          Parametri BIM – WBS &amp; Codice Tariffa (DATI_WBS)
-        </h2>
-        <p className="text-sm text-gray-400">
-          Questo pannello fornisce una panoramica sullo stato di
-          mappatura dei DATI_WBS del modello, sulla heatmap e
-          sull&apos;import automatico dei livelli WBS da IFC.
-          <br />
-          Per modificare i parametri di singoli elementi usa il
-          pannellino <span className="font-semibold">“DATI_WBS selezione”</span>
-          sopra il viewport 3D.
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-base font-semibold text-slate-900">
+            Parametri BIM – WBS &amp; Codice Tariffa (DATI_WBS)
+          </h2>
+          <p className="mt-1 text-xs text-slate-500">
+            Panoramica sullo stato di mappatura dei DATI_WBS del modello,
+            heatmap e import automatico dei livelli WBS da IFC.
+            <br />
+            Per modificare i parametri della selezione usa il pannellino{" "}
+            <span className="font-semibold">“DATI_WBS selezione”</span> sopra il
+            viewport 3D.
+          </p>
+        </div>
+        {activeModelId && (
+          <div className="text-[11px] text-slate-400">
+            Modello attivo:{" "}
+            <code className="text-slate-600 bg-slate-100 rounded px-1 py-[1px]">
+              {activeModelId}
+            </code>
+          </div>
+        )}
       </div>
 
       {/* STATO MODELLO / COPERTURA DATI_WBS */}
-      <div className="rounded-md border border-gray-700 bg-gray-900/60 p-3 text-xs space-y-2">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="font-semibold text-gray-200">
+      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex flex-col gap-1">
+            <div className="text-[12px] font-semibold text-slate-800">
               Stato mappatura DATI_WBS
             </div>
-            {activeModelId ? (
-              <div className="text-[11px] text-gray-400">
-                Modello attivo: <code>{activeModelId}</code>
-              </div>
-            ) : (
-              <div className="text-[11px] text-amber-400">
+            {!activeModelId && (
+              <div className="text-[11px] text-amber-600">
                 Nessun modello indicizzato. Importa un IFC per analizzare la
                 mappatura DATI_WBS.
               </div>
             )}
           </div>
+
+          <button
+            type="button"
+            onClick={() => setHeatmapEnabled((v) => !v)}
+            className={[
+              "inline-flex items-center gap-1 rounded-full border px-3 py-1 text-[11px] font-medium transition",
+              heatmapEnabled
+                ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                : "border-slate-300 bg-white text-slate-600 hover:bg-slate-50",
+            ].join(" ")}
+          >
+            <span
+              className={[
+                "h-2.5 w-2.5 rounded-full",
+                heatmapEnabled ? "bg-emerald-500" : "bg-slate-300",
+              ].join(" ")}
+            />
+            {heatmapEnabled
+              ? "Heatmap DATI_WBS attiva"
+              : "Attiva heatmap DATI_WBS"}
+          </button>
         </div>
 
         {scan && activeModelId && (
           <>
-            <div className="grid grid-cols-3 gap-2 text-center mt-2">
-              <div className="rounded bg-gray-950/70 border border-gray-800 p-2">
-                <div className="text-[11px] text-gray-400">Completi</div>
-                <div className="text-sm font-semibold text-emerald-400">
+            <div className="grid grid-cols-3 gap-3 text-center mt-1">
+              <div className="rounded-lg border border-slate-200 bg-white px-2 py-2">
+                <div className="text-[11px] text-slate-500">Completi</div>
+                <div className="text-sm font-semibold text-emerald-600">
                   {scan.completeCount}
                 </div>
               </div>
-              <div className="rounded bg-gray-950/70 border border-gray-800 p-2">
-                <div className="text-[11px] text-gray-400">Parziali</div>
-                <div className="text-sm font-semibold text-amber-400">
+              <div className="rounded-lg border border-slate-200 bg-white px-2 py-2">
+                <div className="text-[11px] text-slate-500">Parziali</div>
+                <div className="text-sm font-semibold text-amber-500">
                   {scan.partialCount}
                 </div>
               </div>
-              <div className="rounded bg-gray-950/70 border border-gray-800 p-2">
-                <div className="text-[11px] text-gray-400">Non mappati</div>
-                <div className="text-sm font-semibold text-red-400">
+              <div className="rounded-lg border border-slate-200 bg-white px-2 py-2">
+                <div className="text-[11px] text-slate-500">Non mappati</div>
+                <div className="text-sm font-semibold text-rose-500">
                   {scan.emptyCount}
                 </div>
               </div>
             </div>
 
-            <div className="flex items-center justify-between mt-2">
-              <div className="text-[11px] text-gray-400">
+            <div className="flex items-center justify-between mt-2 text-[11px] text-slate-500">
+              <div>
                 Elementi totali indicizzati:{" "}
-                <span className="text-gray-200 font-medium">
+                <span className="font-medium text-slate-800">
                   {scan.totalElements}
                 </span>
               </div>
-              <div className="text-[11px] text-gray-400">
+              <div>
                 Completamento medio:{" "}
-                <span className="text-emerald-400 font-semibold">
+                <span className="font-semibold text-emerald-600">
                   {(scan.completionRatioAvg * 100).toFixed(1)}%
                 </span>
               </div>
             </div>
 
             <div className="flex items-center justify-between mt-2">
-              <button
-                type="button"
-                onClick={() => setHeatmapEnabled((v) => !v)}
-                className={`px-2 py-1 rounded text-[11px] font-medium border transition ${
-                  heatmapEnabled
-                    ? "border-emerald-500 bg-emerald-900/40 text-emerald-100"
-                    : "border-gray-600 bg-gray-900/60 text-gray-200 hover:bg-gray-800"
-                }`}
-              >
-                {heatmapEnabled
-                  ? "Disattiva heatmap DATI_WBS"
-                  : "Attiva heatmap DATI_WBS"}
-              </button>
-
-              <div className="flex items-center gap-2 text-[10px] text-gray-400">
+              <div className="flex items-center gap-3 text-[10px] text-slate-500">
                 <div className="flex items-center gap-1">
                   <span className="inline-block w-3 h-3 rounded-full bg-emerald-400" />
                   <span>Completi</span>
@@ -287,31 +293,31 @@ export const WbsTariffaView: React.FC = () => {
                   <span>Parziali</span>
                 </div>
                 <div className="flex items-center gap-1">
-                  <span className="inline-block w-3 h-3 rounded-full bg-red-400" />
+                  <span className="inline-block w-3 h-3 rounded-full bg-rose-400" />
                   <span>Non mappati</span>
                 </div>
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-2 mt-2">
+            <div className="flex flex-wrap gap-2 mt-3">
               <button
                 type="button"
                 onClick={() => handleSelectByStatus("complete")}
-                className="flex-1 min-w-[120px] rounded border border-emerald-600/70 bg-emerald-900/30 px-2 py-1 text-[11px] font-medium text-emerald-200 hover:bg-emerald-900/60 transition"
+                className="flex-1 min-w-[120px] rounded-md border border-emerald-300 bg-emerald-50 px-2 py-1 text-[11px] font-medium text-emerald-700 hover:bg-emerald-100 transition"
               >
                 Seleziona completi
               </button>
               <button
                 type="button"
                 onClick={() => handleSelectByStatus("partial")}
-                className="flex-1 min-w-[120px] rounded border border-amber-600/70 bg-amber-900/20 px-2 py-1 text-[11px] font-medium text-amber-200 hover:bg-amber-900/40 transition"
+                className="flex-1 min-w-[120px] rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-700 hover:bg-amber-100 transition"
               >
                 Seleziona parziali
               </button>
               <button
                 type="button"
                 onClick={() => handleSelectByStatus("empty")}
-                className="flex-1 min-w-[120px] rounded border border-red-600/70 bg-red-900/20 px-2 py-1 text-[11px] font-medium text-red-200 hover:bg-red-900/40 transition"
+                className="flex-1 min-w-[120px] rounded-md border border-rose-300 bg-rose-50 px-2 py-1 text-[11px] font-medium text-rose-700 hover:bg-rose-100 transition"
               >
                 Seleziona non mappati
               </button>
@@ -321,25 +327,28 @@ export const WbsTariffaView: React.FC = () => {
       </div>
 
       {/* IMPORT AUTOMATICO DA IFC → DATI_WBS */}
-      <div className="rounded-md border border-gray-700 bg-gray-900/50 p-3 text-xs space-y-2">
-        <div className="flex items-center justify-between mb-1">
-          <div className="font-semibold text-gray-200">
-            Import automatico WBS da IFC
-          </div>
-          <div className="text-[11px] text-gray-400">
-            Copia i parametri STM_WBS_* nel Pset <code>DATI_WBS</code> senza
-            sovrascrivere i valori già compilati.
+      <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs space-y-3">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="text-[12px] font-semibold text-slate-800">
+              Import automatico WBS da IFC
+            </div>
+            <div className="mt-1 text-[11px] text-slate-500">
+              Copia i parametri <code className="text-[11px]">STM_WBS_*</code>{" "}
+              nel Pset <code className="text-[11px]">DATI_WBS</code> senza
+              sovrascrivere i valori già compilati.
+            </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 gap-3">
           {(["WBS0", "WBS1", "WBS2", "WBS3"] as WbsLevelKey[]).map((level) => (
             <div key={level} className="flex flex-col gap-1">
-              <label className="text-[11px] font-medium text-gray-300">
+              <label className="text-[11px] font-medium text-slate-700">
                 {level} · parametro IFC origine
               </label>
               <input
-                className="rounded border border-gray-700 bg-gray-950 px-2 py-1 text-[11px] text-gray-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                className="rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] text-slate-800 shadow-sm focus:outline-none focus:ring-1 focus:ring-sky-500 focus:border-sky-500"
                 value={importSources[level] ?? ""}
                 onChange={(e) =>
                   handleChangeImportSource(level, e.target.value)
@@ -354,7 +363,7 @@ export const WbsTariffaView: React.FC = () => {
           <button
             type="button"
             onClick={handleImportFromIfc}
-            className="rounded px-3 py-1.5 text-[11px] font-medium bg-sky-600 hover:bg-sky-500 text-white"
+            className="inline-flex items-center rounded-md bg-sky-600 px-3 py-1.5 text-[11px] font-medium text-white shadow-sm hover:bg-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-1 focus:ring-offset-white"
           >
             Importa da IFC nei DATI_WBS
           </button>
@@ -363,7 +372,7 @@ export const WbsTariffaView: React.FC = () => {
 
       {/* STATUS MESSAGGI */}
       {status && (
-        <div className="text-xs text-gray-300 bg-gray-900/60 border border-gray-700 rounded px-2 py-1">
+        <div className="text-xs rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-700">
           {status}
         </div>
       )}
