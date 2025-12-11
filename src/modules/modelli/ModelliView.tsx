@@ -1,9 +1,18 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { loadIfcFromFile } from "@core/bim/ifcLoader";
-import { listModels, type ModelInfo } from "@core/bim/modelRegistry";
+import {
+  listModels,
+  type ModelInfo,
+  getActiveModelId,
+  setActiveModel,
+  setModelVisibility,
+} from "@core/bim/modelRegistry";
 
 export const ModelliView: React.FC = () => {
   const [models, setModels] = useState<ModelInfo[]>([]);
+  const [activeModelId, setActiveModelIdState] = useState<string | null>(
+    getActiveModelId(),
+  );
   const [loading, setLoading] = useState(false);
   const [lastFileName, setLastFileName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -13,21 +22,34 @@ export const ModelliView: React.FC = () => {
   const refreshModels = useCallback(() => {
     const all = listModels();
     setModels(all);
+    setActiveModelIdState(getActiveModelId());
   }, []);
 
   useEffect(() => {
     // prima lettura
     refreshModels();
 
-    // ascolta gli eventi globali del registry
-    const handler = () => {
+    const handleListUpdated = () => {
       refreshModels();
     };
 
-    window.addEventListener("aedera:modelListUpdated", handler);
+    const handleActiveChanged = (event: Event) => {
+      const detail = (event as CustomEvent<{ modelId?: string | null }>).detail;
+      setActiveModelIdState(detail?.modelId ?? getActiveModelId());
+    };
+
+    window.addEventListener("aedera:modelListUpdated", handleListUpdated);
+    window.addEventListener(
+      "aedera:activeModelChanged",
+      handleActiveChanged as EventListener,
+    );
 
     return () => {
-      window.removeEventListener("aedera:modelListUpdated", handler);
+      window.removeEventListener("aedera:modelListUpdated", handleListUpdated);
+      window.removeEventListener(
+        "aedera:activeModelChanged",
+        handleActiveChanged as EventListener,
+      );
     };
   }, [refreshModels]);
 
@@ -49,8 +71,7 @@ export const ModelliView: React.FC = () => {
 
       try {
         await loadIfcFromFile(file);
-        // il registry emette l'evento "aedera:modelListUpdated",
-        // quindi la lista si aggiornerà automaticamente
+        // il registry emette l'evento "aedera:modelListUpdated"
       } catch (e) {
         console.error(e);
         setError(
@@ -64,6 +85,19 @@ export const ModelliView: React.FC = () => {
   );
 
   const hasModels = models.length > 0;
+
+  const handleSetActive = (modelId: string) => {
+    setActiveModel(modelId);
+    setActiveModelIdState(modelId);
+  };
+
+  const handleToggleVisibility = (
+    e: React.MouseEvent<HTMLButtonElement>,
+    model: ModelInfo,
+  ) => {
+    e.stopPropagation();
+    setModelVisibility(model.modelId, !model.visible);
+  };
 
   return (
     <div className="flex h-full flex-col gap-3 text-sm text-slate-700">
@@ -125,35 +159,67 @@ export const ModelliView: React.FC = () => {
             </div>
             <div className="flex-1 overflow-y-auto px-4 py-3">
               <div className="space-y-2">
-                {models.map((model) => (
-                  <div
-                    key={model.modelId}
-                    className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-7 w-7 items-center justify-center rounded-full bg-sky-100 text-[11px] font-semibold text-sky-700">
-                        {model.label.charAt(0).toUpperCase()}
-                      </div>
-                      <div className="flex flex-col">
-                        <span className="text-[12px] font-medium text-slate-900">
-                          {model.label}
-                        </span>
-                        <span className="text-[11px] text-slate-500">
-                          ID: <code className="font-mono text-[10px]">{model.modelId}</code>
-                        </span>
-                      </div>
-                    </div>
+                {models.map((model) => {
+                  const isActive = model.modelId === activeModelId;
 
-                    <div className="flex items-center gap-3 text-[11px] text-slate-500">
-                      <span className="rounded-full bg-white px-2 py-[2px]">
-                        IFC
-                      </span>
-                      <span>
-                        {model.elementsCount ?? "—"} elementi indicizzati
-                      </span>
+                  return (
+                    <div
+                      key={model.modelId}
+                      onClick={() => handleSetActive(model.modelId)}
+                      className={[
+                        "flex cursor-pointer items-center justify-between gap-3 rounded-lg border px-3 py-2",
+                        isActive
+                          ? "border-sky-300 bg-sky-50"
+                          : "border-slate-200 bg-slate-50 hover:bg-slate-100",
+                      ].join(" ")}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-sky-100 text-[11px] font-semibold text-sky-700">
+                          {model.label.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="flex flex-col">
+                          <span className="text-[12px] font-medium text-slate-900">
+                            {model.label}
+                          </span>
+                          <span className="text-[11px] text-slate-500">
+                            ID:{" "}
+                            <code className="font-mono text-[10px]">
+                              {model.modelId}
+                            </code>
+                          </span>
+                          {model.fileName && (
+                            <span className="text-[10px] text-slate-400">
+                              File: {model.fileName}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3 text-[11px] text-slate-500">
+                        {isActive && (
+                          <span className="rounded-full bg-sky-100 px-2 py-[2px] text-sky-700">
+                            Attivo
+                          </span>
+                        )}
+                        <span>
+                          {model.elementsCount ?? "—"} elementi indicizzati
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => handleToggleVisibility(e, model)}
+                          className={[
+                            "inline-flex items-center rounded-full border px-2 py-[2px] text-[10px] font-medium",
+                            model.visible
+                              ? "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                              : "border-slate-300 bg-slate-200 text-slate-500",
+                          ].join(" ")}
+                        >
+                          {model.visible ? "Nascondi" : "Mostra"}
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </div>

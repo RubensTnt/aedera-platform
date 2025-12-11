@@ -25,6 +25,8 @@ import {
 } from "@core/bim/datiWbsImport";
 
 import type { WbsLevelKey } from "@core/bim/datiWbsProfile";
+import { getActiveModelId } from "@core/bim/modelRegistry";
+
 
 export const WbsTariffaView: React.FC = () => {
   const [status, setStatus] = useState<string | null>(null);
@@ -48,14 +50,14 @@ export const WbsTariffaView: React.FC = () => {
   };
 
   const refreshScan = useCallback(() => {
-    const modelIds = getIndexedModelIds();
-    if (!modelIds.length) {
+    const modelId = getActiveModelId();
+
+    if (!modelId) {
       setActiveModelId(null);
       setScan(null);
       return;
     }
 
-    const modelId = modelIds[0];
     setActiveModelId(modelId);
 
     const result = scanModelDatiWbs(modelId);
