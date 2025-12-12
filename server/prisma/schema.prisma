@@ -1,0 +1,57 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Project {
+  id        String   @id @default(cuid())
+  name      String
+  code      String?  @unique
+  createdAt DateTime @default(now())
+
+  datiWbs   ElementDatiWbs[]
+
+  @@index([code])
+}
+
+model ElementDatiWbs {
+  id            String   @id @default(cuid())
+  projectId     String
+  project       Project  @relation(fields: [projectId], references: [id])
+
+  ifcGlobalId   String   // GUID IFC dell'elemento
+  modelLabel    String?  // opzionale: nome del modello IFC di riferimento
+
+  // campi DATI_WBS
+  wbs0          String?
+  wbs1          String?
+  wbs2          String?
+  wbs3          String?
+  wbs4          String?
+  wbs5          String?
+  wbs6          String?
+  wbs7          String?
+  wbs8          String?
+  wbs9          String?
+  wbs10         String?
+
+  tariffaCodice   String?
+  pacchettoCodice String?
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Non vogliamo duplicati per lo stesso elemento di un progetto
+  @@unique([projectId, ifcGlobalId])
+  @@index([projectId])
+  @@index([ifcGlobalId])
+}
