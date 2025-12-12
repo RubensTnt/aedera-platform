@@ -39,6 +39,12 @@ export function readDatiWbs(
   if (typeof t === "string" && t.trim().length > 0) {
     out.TariffaCodice = t.trim();
   }
+  
+  // PacchettoCodice
+  const p = pset["PacchettoCodice"];
+  if (typeof p === "string" && p.trim().length > 0) {
+    out.PacchettoCodice = p.trim();
+  }
 
   return out;
 }

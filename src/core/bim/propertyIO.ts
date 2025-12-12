@@ -17,7 +17,10 @@ import {
   type DatiWbsProps,
   getDatiWbsProps,
   setDatiWbsProps,
+  getElementRecord,
 } from "./modelProperties";
+import { getProjectId, upsertElementDatiWbs } from "../api/aederaApi";
+
 
 /**
  * Restituisce i DATI_WBS correnti di un elemento, se presenti
@@ -40,8 +43,16 @@ export function writeDatiWbs(
   modelId: string,
   localId: number,
   patch: Partial<DatiWbsProps>,
-): DatiWbsProps {
-  return setDatiWbsProps(modelId, localId, patch);
+) {
+  const updated = setDatiWbsProps(modelId, localId, patch);
+
+  const record = getElementRecord(modelId, localId);
+  const globalId = record?.globalId;
+  if (globalId) {
+    void upsertElementDatiWbs(getProjectId(), globalId, patch);
+  }
+
+  return updated;
 }
 
 // Riesportiamo il tipo così la UI può importarlo direttamente da qui, se serve.

@@ -1,0 +1,107 @@
+// src/core/api/aederaApi.ts
+
+import type { DatiWbsProps } from "../bim/modelProperties";
+
+// Per ora: server locale
+const API_BASE = "http://localhost:4000";
+
+export function getProjectId(): string {
+  // zero-UI: projectId persistente ma semplice
+  return localStorage.getItem("aedera:projectId") ?? "aedera-demo";
+}
+
+function toDbPatch(patch: Partial<DatiWbsProps>): Record<string, string | null> {
+  const out: Record<string, string | null> = {};
+
+  for (let i = 0; i <= 10; i++) {
+    const k = `WBS${i}` as keyof DatiWbsProps;
+    if (k in patch) {
+      const v = patch[k];
+      // null = rimozione esplicita, string = valore
+      out[`wbs${i}`] = v == null ? null : String(v);
+    }
+  }
+
+  if ("TariffaCodice" in patch) {
+    const v = patch.TariffaCodice;
+    out.tariffaCodice = v == null ? null : String(v);
+  }
+
+  if ("PacchettoCodice" in patch) {
+    const v = patch.PacchettoCodice;
+    out.pacchettoCodice = v == null ? null : String(v);
+  }
+
+  return out;
+}
+
+export async function upsertElementDatiWbs(
+  projectId: string,
+  globalId: string,
+  patch: Partial<DatiWbsProps>,
+): Promise<void> {
+  const body = toDbPatch(patch);
+
+  // se patch vuota non fare chiamate inutili
+  if (!Object.keys(body).length) return;
+
+  try {
+    await fetch(
+      `${API_BASE}/api/projects/${encodeURIComponent(projectId)}/elements/${encodeURIComponent(globalId)}/dati-wbs`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    );
+  } catch (err) {
+    // non blocchiamo la UI; log per debug
+    console.warn("[DB] upsertElementDatiWbs failed", { projectId, globalId, err });
+  }
+}
+
+export async function bulkGetDatiWbs(
+  projectId: string,
+  globalIds: string[],
+): Promise<any[]> {
+  if (!globalIds.length) return [];
+
+  // ✅ chunk per evitare request troppo grandi
+  const CHUNK_SIZE = 500;
+
+  const chunks: string[][] = [];
+  for (let i = 0; i < globalIds.length; i += CHUNK_SIZE) {
+    chunks.push(globalIds.slice(i, i + CHUNK_SIZE));
+  }
+
+  const allRows: any[] = [];
+
+  for (const chunk of chunks) {
+    try {
+      const res = await fetch(
+        `${API_BASE}/api/projects/${encodeURIComponent(projectId)}/dati-wbs/bulk-get`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ globalIds: chunk }),
+        },
+      );
+
+      if (!res.ok) {
+        console.warn("[DB] bulkGetDatiWbs chunk failed", {
+          projectId,
+          status: res.status,
+          count: chunk.length,
+        });
+        continue;
+      }
+
+      const rows = await res.json();
+      if (Array.isArray(rows)) allRows.push(...rows);
+    } catch (err) {
+      console.warn("[DB] bulkGetDatiWbs chunk error", { projectId, err });
+    }
+  }
+
+  return allRows;
+}

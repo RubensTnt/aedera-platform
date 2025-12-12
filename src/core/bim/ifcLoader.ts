@@ -7,8 +7,13 @@ import {
   listIfcTypes,
   listPsetNames,
   listPsetPropertyNames,
+  getAllElements,
+  setDatiWbsProps,
+  type DatiWbsProps,
 } from "@core/bim/modelProperties";
+import { bulkGetDatiWbs, getProjectId } from "@core/api/aederaApi";
 import { upsertIfcModel } from "./modelRegistry";
+
 
 /**
  * Carica un file IFC selezionato dall'utente e lo converte in Fragments.
@@ -55,6 +60,58 @@ export async function loadIfcFromFile(file: File): Promise<void> {
       "[IFC Loader] Errore durante extractPropertiesForModel:",
       error,
     );
+  }
+
+  // 🔁 Ripristino DATI_WBS persistiti su DB (per projectId)
+  try {
+    const modelId = model.modelId;
+    const elements = getAllElements(modelId) ?? [];
+
+    const globalToLocal = new Map<string, number>();
+    for (const el of elements) {
+      if (el.globalId) globalToLocal.set(el.globalId, el.localId);
+    }
+
+    const globalIds = Array.from(globalToLocal.keys());
+    const rows = await bulkGetDatiWbs(getProjectId(), globalIds);
+
+    // rows: [{ ifcGlobalId, wbs0..wbs10, tariffaCodice, pacchettoCodice, ...}]
+    for (const row of rows) {
+      const gid = row.ifcGlobalId as string | undefined;
+      if (!gid) continue;
+      const localId = globalToLocal.get(gid);
+      if (localId == null) continue;
+
+      const patch: Partial<DatiWbsProps> = {};
+
+      for (let i = 0; i <= 10; i++) {
+        const k = `wbs${i}`;
+        if (k in row) {
+          const v = row[k];
+          (patch as any)[`WBS${i}`] = v == null ? null : String(v);
+        }
+      }
+
+      if ("tariffaCodice" in row) {
+        const v = row.tariffaCodice;
+        patch.TariffaCodice = v == null ? null : String(v);
+      }
+
+      if ("pacchettoCodice" in row) {
+        const v = row.pacchettoCodice;
+        patch.PacchettoCodice = v == null ? null : String(v);
+      }
+
+      // Applica nel PropertyEngine (non rilanciamo writeDatiWbs per evitare loop di persistenza)
+      setDatiWbsProps(modelId, localId, patch);
+    }
+
+    console.log("[IFC Loader] Ripristino DATI_WBS da DB completato", {
+      modelId,
+      restored: rows.length,
+    });
+  } catch (error) {
+    console.warn("[IFC Loader] Ripristino DATI_WBS da DB fallito:", error);
   }
 
   // 🔎 Debug + registrazione nel Model Registry

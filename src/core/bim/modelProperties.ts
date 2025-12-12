@@ -756,24 +756,6 @@ export function listIfcTypes(modelId: string): string[] {
   return [...types].sort();
 }
 
-/**
- * Configurazione per interpretare i valori WBS dagli IFC.
- * psetName: nome del PropertySet (es. "Pset_AED_WBS")
- * levelProps: lista ordinata dei nomi delle proprietà di livello
- *             (es. ["WBS0","WBS1","WBS4","WBS7","WBS8","WBS9"])
- */
-export interface WbsMappingConfig {
-  psetName: string;
-  levelProps: string[];
-}
-
-/**
- * Configurazione per leggere il codice tariffa dagli IFC.
- */
-export interface TariffMappingConfig {
-  psetName: string;
-  codeProp: string;
-}
 
 /**
  * Configurazione di default WBS:

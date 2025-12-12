@@ -12,6 +12,8 @@ import {
   type DatiWbsProfile,
   type WbsLevelKey,
 } from "./datiWbsProfile";
+import { writeDatiWbs } from "./propertyIO";
+
 
 /**
  * Configurazione di import:
@@ -211,7 +213,7 @@ export function importDatiWbsFromIfc(
     }
 
     if (elementChanged) {
-      setDatiWbsProps(modelId, localId, patch);
+      writeDatiWbs(modelId, localId, patch);
       updatedElements += 1;
     }
   }

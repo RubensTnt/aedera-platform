@@ -8,9 +8,9 @@ import { getAederaViewer } from "./thatopen";
 import {
   type DatiWbsProps,
   getDatiWbsProps,
-  setDatiWbsProps,
 } from "./modelProperties";
 import type { DatiWbsScanResult } from "./datiWbsScanner";
+import { writeDatiWbs } from "./propertyIO";
 
 // Nomi degli stili di highlighter per la heatmap DATI_WBS
 const WBS_COMPLETE_STYLE = "wbs-complete";
@@ -193,7 +193,7 @@ export async function applyDatiWbsToSelection(
   for (const [modelId, localIds] of Object.entries(selection)) {
     const ids = Array.from(localIds as Set<number>);
     for (const localId of ids) {
-      const finalProps = setDatiWbsProps(modelId, localId, patch);
+      const finalProps = writeDatiWbs(modelId, localId, patch);
       updated.push({
         modelId,
         localId,
