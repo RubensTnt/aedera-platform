@@ -4,7 +4,6 @@ import {
   applyDatiWbsToSelection,
   type SelectedElementWithDatiWbs,
 } from "@core/bim/selectionAdapter";
-import { ALL_WBS_LEVEL_KEYS } from "@core/bim/datiWbsProfile";
 import type { DatiWbsProps } from "@core/bim/modelProperties";
 import { useDatiWbsProfile } from "../../hooks/useDatiWbsProfile";
 import type { DatiWbsProfile } from "../../core/bim/datiWbsProfile";

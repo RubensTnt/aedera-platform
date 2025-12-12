@@ -5,10 +5,6 @@ import React, {
 } from "react";
 
 import {
-  getIndexedModelIds,
-} from "@core/bim/modelProperties";
-
-import {
   selectElementsByLocalIds,
   applyDatiWbsHeatmap,
   clearDatiWbsHeatmap,
