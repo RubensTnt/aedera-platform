@@ -1,9 +1,9 @@
-export interface AederaProject {
+export type AederaProject = {
   id: string;
   name: string;
   code?: string;
-  // per ora basta questo, più avanti: ownerId, settings, ecc.
-}
+  createdAt?: string;
+};
 
 export type ProjectRole = "project-admin" | "project-member";
 

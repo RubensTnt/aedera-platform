@@ -1,13 +1,23 @@
 // src/core/api/aederaApi.ts
 
 import type { DatiWbsProps } from "../bim/modelProperties";
+import { getCurrentProjectId } from "../projects/projectStore";
+import type { AederaProject } from "../projects/projectTypes";
 
 // Per ora: server locale
 const API_BASE = "http://localhost:4000";
 
-export function getProjectId(): string {
+// === DEPRECATO ===
+/* export function getProjectId(): string {
   // zero-UI: projectId persistente ma semplice
   return localStorage.getItem("aedera:projectId") ?? "aedera-demo";
+} */
+
+// === NUOVO - prendiamo il Progetto dallo store ===
+export function requireProjectId(): string {
+  const pid = getCurrentProjectId();
+  if (!pid) throw new Error("No current project selected");
+  return pid;
 }
 
 function toDbPatch(patch: Partial<DatiWbsProps>): Record<string, string | null> {
@@ -105,3 +115,23 @@ export async function bulkGetDatiWbs(
 
   return allRows;
 }
+
+export async function listProjects(): Promise<AederaProject[]> {
+  const res = await fetch(`${API_BASE}/api/projects`, {
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(`listProjects failed: ${res.status}`);
+  return res.json();
+}
+
+export async function createProject(payload: { name: string; code?: string }) {
+  const res = await fetch(`${API_BASE}/api/projects`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(`createProject failed: ${res.status}`);
+  return res.json();
+}
+

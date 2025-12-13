@@ -53,7 +53,7 @@ export const DatiWbsProfileSettingsPanel: React.FC = () => {
             Definisci quali livelli WBS e quali codici sono richiesti per il
             progetto{" "}
             <span className="font-medium text-slate-800">
-              {project.name}
+              {project?.name ?? "…"}
             </span>.
           </p>
         </div>

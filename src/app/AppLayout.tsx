@@ -3,6 +3,8 @@
 import React from "react";
 import { Link, useLocation } from "react-router-dom";
 import { ViewerContainer } from "@ui/layout/ViewerContainer";
+import { useProjects } from "../core/projects/ProjectContext";
+
 
 type NavItem = {
   label: string;
@@ -36,7 +38,7 @@ export const AppLayout: React.FC<{ children?: React.ReactNode }> = ({
   return (
     <div className="h-screen w-screen flex flex-col bg-slate-100 text-slate-900">
       {/* TOP BAR */}
-      <header className="h-12 flex items-center justify-between px-4 border-b border-slate-200 bg-white">
+      <header className="h-12 flex items-center px-4 border-b border-slate-200 bg-white">
         <div className="flex items-center gap-3">
           <div className="h-7 w-7 rounded bg-sky-600 flex items-center justify-center text-xs font-semibold text-white">
             A
@@ -50,16 +52,20 @@ export const AppLayout: React.FC<{ children?: React.ReactNode }> = ({
         </div>
 
         <div className="flex items-center gap-3 text-[11px] text-slate-500">
+          <ProjectSwitcher />
+
           <button
             type="button"
             className="px-2 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50"
           >
             Salva
           </button>
+
           <div className="h-7 w-7 rounded-full bg-slate-200 flex items-center justify-center text-[11px] font-semibold">
             U
           </div>
         </div>
+
       </header>
 
       {/* BODY */}
@@ -140,3 +146,60 @@ export const AppLayout: React.FC<{ children?: React.ReactNode }> = ({
     </div>
   );
 };
+
+
+function ProjectSwitcher() {
+  const { projects, currentProject, currentProjectId, setProjectById, createNewProject } = useProjects();
+  const [open, setOpen] = React.useState(false);
+  const [name, setName] = React.useState("");
+  const [code, setCode] = React.useState("");
+
+  return (
+    <div style={{ position: "relative" }}>
+      <button onClick={() => setOpen((v) => !v)}>
+        {currentProject?.name ?? (currentProjectId ?? "Seleziona progetto")}
+      </button>
+
+      {open && (
+        <div style={{ position: "absolute", right: 0, top: "110%", background: "#fff", border: "1px solid #ddd", padding: 8, minWidth: 260, zIndex: 10 }}>
+          <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 6 }}>Progetti</div>
+
+          <div style={{ maxHeight: 240, overflow: "auto" }}>
+            {projects.map((p) => (
+              <button
+                key={p.id}
+                onClick={() => {
+                  setProjectById(p.id);
+                  setOpen(false);
+                }}
+                style={{ display: "block", width: "100%", textAlign: "left", padding: "6px 8px", background: p.id === currentProjectId ? "#f2f2f2" : "transparent" }}
+              >
+                <div>{p.name}</div>
+                {p.code ? <div style={{ fontSize: 12, opacity: 0.7 }}>{p.code}</div> : null}
+              </button>
+            ))}
+          </div>
+
+          <hr style={{ margin: "10px 0" }} />
+
+          <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 6 }}>Nuovo progetto</div>
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nome" style={{ width: "100%", marginBottom: 6 }} />
+          <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="Codice (opz.)" style={{ width: "100%", marginBottom: 6 }} />
+
+          <button
+            disabled={!name.trim()}
+            onClick={async () => {
+              await createNewProject({ name: name.trim(), code: code.trim() || undefined });
+              setName("");
+              setCode("");
+              setOpen(false);
+            }}
+            style={{ width: "100%" }}
+          >
+            Crea
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}

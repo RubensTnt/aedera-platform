@@ -11,9 +11,8 @@ import {
   setDatiWbsProps,
   type DatiWbsProps,
 } from "@core/bim/modelProperties";
-import { bulkGetDatiWbs, getProjectId } from "@core/api/aederaApi";
+import { bulkGetDatiWbs, requireProjectId } from "@core/api/aederaApi";
 import { upsertIfcModel } from "./modelRegistry";
-
 
 /**
  * Carica un file IFC selezionato dall'utente e lo converte in Fragments.
@@ -72,8 +71,13 @@ export async function loadIfcFromFile(file: File): Promise<void> {
       if (el.globalId) globalToLocal.set(el.globalId, el.localId);
     }
 
-    const globalIds = Array.from(globalToLocal.keys());
-    const rows = await bulkGetDatiWbs(getProjectId(), globalIds);
+    const projectId = requireProjectId();
+
+    const elementIds = elements
+      .map((e) => e.globalId)
+      .filter((v): v is string => !!v);
+
+    const rows = await bulkGetDatiWbs(projectId, elementIds);
 
     // rows: [{ ifcGlobalId, wbs0..wbs10, tariffaCodice, pacchettoCodice, ...}]
     for (const row of rows) {

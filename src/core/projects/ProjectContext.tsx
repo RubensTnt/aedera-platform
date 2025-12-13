@@ -1,49 +1,114 @@
-import React, { createContext, useContext, useMemo } from "react";
-import type { AederaProject, ProjectContextState, ProjectRole } from "./projectTypes";
+import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createProject, listProjects } from "../api/aederaApi";
+import type { AederaProject } from "./projectTypes";
+import {
+  initProjectStore,
+  getCurrentProjectId,
+  setCurrentProjectId,
+  subscribeProjectId,
+} from "./projectStore";
 
-const ProjectContext = createContext<ProjectContextState | null>(null);
-
-interface ProjectProviderProps {
-  children: React.ReactNode;
-}
-
-/**
- * TODO: in futuro questo arriverà dal backend / routing (es. /projects/:projectId)
- */
-const DEFAULT_PROJECT: AederaProject = {
-  id: "project-default",
-  name: "Progetto demo Aedera",
-  code: "AED-DEMO",
+type ProjectCtx = {
+  projects: AederaProject[];
+  currentProjectId: string | null;
+  currentProject: AederaProject | null;
+  setProjectById: (id: string) => void;
+  createNewProject: (payload: { name: string; code?: string }) => Promise<AederaProject>;
+  reloadProjects: () => Promise<void>;
 };
 
-const DEFAULT_ROLE: ProjectRole = "project-admin"; // per ora sei sempre admin :)
+const Ctx = createContext<ProjectCtx | null>(null);
 
-export const ProjectProvider: React.FC<ProjectProviderProps> = ({ children }) => {
-  const value = useMemo<ProjectContextState>(
-    () => ({
-      project: DEFAULT_PROJECT,
-      role: DEFAULT_ROLE,
-    }),
-    [],
-  );
+export function ProjectProvider({ children }: { children: React.ReactNode }) {
+  const [projects, setProjects] = useState<AederaProject[]>([]);
+  const [currentProjectIdState, setCurrentProjectIdState] = useState<string | null>(null);
 
-  return <ProjectContext.Provider value={value}>{children}</ProjectContext.Provider>;
-};
+  useEffect(() => {
+    initProjectStore(null);
+    setCurrentProjectIdState(getCurrentProjectId());
 
-export function useProjectContext(): ProjectContextState {
-  const ctx = useContext(ProjectContext);
-  if (!ctx) {
-    throw new Error("useProjectContext must be used within a ProjectProvider");
+    const unsub = subscribeProjectId((pid) => setCurrentProjectIdState(pid));
+    return () => unsub();
+  }, []);
+
+  async function reloadProjects() {
+    try {
+      const items = await listProjects();
+      setProjects(items);
+
+      const storeId = getCurrentProjectId();
+      const storeValid = storeId && items.some((p) => p.id === storeId);
+
+      if (!storeValid) {
+        // fallback: primo progetto se esiste
+        if (items[0]) setCurrentProjectId(items[0].id);
+      }
+    } catch (err) {
+      console.error("[ProjectProvider] reloadProjects failed", err);
+      setProjects([]); // UI resta viva
+    }
   }
-  return ctx;
+
+  useEffect(() => {
+    void reloadProjects();
+  }, []);
+
+  const currentProject = useMemo(() => {
+    if (!currentProjectIdState) return null;
+    return projects.find((p) => p.id === currentProjectIdState) ?? null;
+  }, [projects, currentProjectIdState]);
+
+  function setProjectById(id: string) {
+    setCurrentProjectId(id);
+  }
+
+  async function createNewProjectFn(payload: { name: string; code?: string }) {
+    const p = await createProject(payload);
+    await reloadProjects();
+    setCurrentProjectId(p.id);
+    return p;
+  }
+
+  const value: ProjectCtx = {
+    projects,
+    currentProjectId: currentProjectIdState,
+    currentProject,
+    setProjectById,
+    createNewProject: createNewProjectFn,
+    reloadProjects,
+  };
+
+  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
-export function useCurrentProject(): AederaProject {
-  return useProjectContext().project;
+export function useProjects() {
+  const v = useContext(Ctx);
+  if (!v) throw new Error("useProjects must be used within ProjectProvider");
+  return v;
 }
 
+// compat con il tuo codice attuale: useCurrentProject() già usato da useDatiWbsProfile
+export function useCurrentProject() {
+  const { currentProject } = useProjects();
+  return currentProject;
+}
+
+export function useRequiredProject() {
+  const project = useCurrentProject();
+  if (!project) throw new Error("Project not ready yet");
+  return project;
+}
+
+// ✅ Backward-compat temporaneo: per ora nessun RBAC vero.
+// Consideriamo tutti "admin" per sbloccare UI (Step 1).
 export function useProjectPermissions() {
-  const { role } = useProjectContext();
-  const isProjectAdmin = role === "project-admin";
-  return { isProjectAdmin };
+  return {
+    isProjectAdmin: true,
+    canCreateProject: true,
+    canEditProject: true,
+    canDeleteProject: true,
+    canEditWbs: true,
+  };
 }
+
+
