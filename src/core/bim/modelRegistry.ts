@@ -1,5 +1,4 @@
 // src/core/bim/modelRegistry.ts
-
 import * as OBC from "@thatopen/components";
 import { getAllElements } from "./modelProperties";
 import { getAederaViewer } from "./thatopen";
@@ -7,34 +6,37 @@ import { getAederaViewer } from "./thatopen";
 export type ModelSource = "IFC";
 
 export interface ModelInfo {
+  /** ID del modello in ThatOpen/Fragments (FragmentsModel.modelId) */
   modelId: string;
+
+  /** ID del record sul server (Prisma IfcModel.id) */
+  serverId?: string;
+
   /** Etichetta leggibile (di solito il nome file) */
   label: string;
+
   source: ModelSource;
   fileName?: string;
   createdAt: number;
+
   /** Numero di elementi indicizzati nel Property Engine */
   elementsCount?: number;
+
   /** Visibilità corrente nel viewer 3D */
   visible: boolean;
 }
 
 const registry = new Map<string, ModelInfo>();
-
 let activeModelId: string | null = null;
 
-/**
- * Notifica globale alla UI che è cambiato qualcosa sui modelli.
- */
+/** Notifica globale alla UI che è cambiato qualcosa sui modelli. */
 function emitModelListUpdated() {
   if (typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent("aedera:modelListUpdated"));
   }
 }
 
-/**
- * Notifica globale che è cambiato il modello attivo.
- */
+/** Notifica globale che è cambiato il modello attivo. */
 function emitActiveModelChanged() {
   if (typeof window !== "undefined") {
     window.dispatchEvent(
@@ -49,20 +51,22 @@ function emitActiveModelChanged() {
  * Registra o aggiorna le info di un modello caricato via IFC.
  * Viene chiamato dal loader IFC dopo l'estrazione delle proprietà.
  */
-export function upsertIfcModel(modelId: string, fileName?: string): ModelInfo {
+export function upsertIfcModel(
+  modelId: string,
+  fileName?: string,
+  serverId?: string,
+): ModelInfo {
   const now = Date.now();
   const existing = registry.get(modelId);
 
   const elements = getAllElements(modelId);
   const elementsCount = elements?.length;
 
-  const label =
-    fileName?.trim() ||
-    existing?.label ||
-    modelId;
+  const label = fileName?.trim() || existing?.label || modelId;
 
   const info: ModelInfo = {
     modelId,
+    serverId: serverId ?? existing?.serverId,
     label,
     source: "IFC",
     fileName: fileName ?? existing?.fileName,
@@ -81,6 +85,15 @@ export function upsertIfcModel(modelId: string, fileName?: string): ModelInfo {
 
   emitModelListUpdated();
   return info;
+}
+
+/** Imposta/aggiorna il serverId per un modello già caricato. */
+export function setServerIdForModel(modelId: string, serverId: string): void {
+  const info = registry.get(modelId);
+  if (!info) return;
+  info.serverId = serverId;
+  registry.set(modelId, info);
+  emitModelListUpdated();
 }
 
 /** Restituisce tutti i modelli registrati, ordinati per data di creazione. */
@@ -120,15 +133,10 @@ export function setModelVisibility(modelId: string, visible: boolean): void {
   if (ctx) {
     try {
       const fragments = ctx.components.get(OBC.FragmentsManager);
-      // FragmentsManager.list è una collection keyed; usiamo values()
-      const list = (fragments.list as any).values
-        ? (fragments.list as any).values()
-        : (fragments.list as any)[Symbol.iterator]();
 
-      for (const model of list) {
-        if (!model) continue;
+      // DataMap<string, FragmentsModel> -> values()
+      for (const model of fragments.list.values()) {
         if (model.modelId === modelId) {
-          // toggle visibilità 3D
           model.object.visible = visible;
           fragments.core.update(true);
           break;
@@ -146,10 +154,59 @@ export function setModelVisibility(modelId: string, visible: boolean): void {
   emitModelListUpdated();
 }
 
-/** Svuota il registry (riservato ad eventuali reset futuri). */
+/** Svuota il registry (reset progetto/viewer). */
 export function clearModelsRegistry(): void {
   registry.clear();
   activeModelId = null;
   emitModelListUpdated();
   emitActiveModelChanged();
+}
+
+/**
+ * Rimuove un modello sia dal viewer che dal registry.
+ * modelId qui è il FragmentsModel.modelId.
+ */
+export function removeModel(modelId: string): void {
+  if (!registry.has(modelId)) return;
+
+  const ctx = getAederaViewer();
+  if (ctx) {
+    try {
+      const fragments = ctx.components.get(OBC.FragmentsManager);
+
+      // trova il FragmentsModel corrispondente e rimuovilo
+      for (const model of fragments.list.values()) {
+        if (model.modelId !== modelId) continue;
+
+        try {
+          model.object.removeFromParent();
+        } catch {}
+
+        try {
+          // non tutte le versioni hanno dispose(), quindi try/catch
+          (model as any).dispose?.();
+        } catch {}
+
+        try {
+          fragments.core.update(true);
+        } catch {}
+
+        break;
+      }
+    } catch (error) {
+      console.warn("[ModelRegistry] Impossibile rimuovere modello dal viewer", {
+        modelId,
+        error,
+      });
+    }
+  }
+
+  registry.delete(modelId);
+
+  if (activeModelId === modelId) {
+    activeModelId = listModels()[0]?.modelId ?? null;
+    emitActiveModelChanged();
+  }
+
+  emitModelListUpdated();
 }

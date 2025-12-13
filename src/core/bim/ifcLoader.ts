@@ -19,11 +19,10 @@ import { upsertIfcModel } from "./modelRegistry";
  * Il modello Fragments verrà aggiunto alla scena dal FragmentsManager
  * (configurato in thatopen.ts) e le sue proprietà verranno analizzate.
  */
-export async function loadIfcFromFile(file: File): Promise<void> {
+export async function loadIfcFromFile(file: File): Promise<string> {
   const ctx = getAederaViewer();
   if (!ctx) {
-    console.error("[IFC Loader] Viewer non inizializzato");
-    return;
+    throw new Error("[IFC Loader] Viewer non inizializzato");
   }
 
   const { components } = ctx;
@@ -118,9 +117,10 @@ export async function loadIfcFromFile(file: File): Promise<void> {
     console.warn("[IFC Loader] Ripristino DATI_WBS da DB fallito:", error);
   }
 
-  // 🔎 Debug + registrazione nel Model Registry
-  try {
     const modelId = model.modelId;
+
+  // 🔎 Debug + registrazione nel Model Registry (non deve bloccare il return)
+  try {
     const ifcTypes = listIfcTypes(modelId);
     const psetNames = listPsetNames(modelId);
 
@@ -153,15 +153,23 @@ export async function loadIfcFromFile(file: File): Promise<void> {
       error,
     );
   }
+
+  // ✅ ritorna SEMPRE il modelId
+  return modelId;
 }
 
 
 
-export async function loadIfcFromUrl(url: string, label?: string) {
+export async function loadIfcFromUrl(url: string, label?: string): Promise<string> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Failed to fetch IFC: ${res.status}`);
   const buf = await res.arrayBuffer();
+
   const fileName = label ?? url.split("/").pop() ?? "model.ifc";
   const file = new File([buf], fileName, { type: "application/octet-stream" });
-  return loadIfcFromFile(file);
+
+  // loadIfcFromFile nel tuo progetto ritorna il modelId (string)
+  // Se non lo fa, dimmelo e lo sistemiamo lì, ma è la soluzione corretta.
+  const modelId = await loadIfcFromFile(file);
+  return modelId;
 }

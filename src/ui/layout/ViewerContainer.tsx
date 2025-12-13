@@ -5,6 +5,7 @@ import { listProjectModels, API_BASE } from "@core/api/aederaApi";
 import { loadIfcFromUrl } from "@core/bim/ifcLoader";
 import { useProjects } from "@core/projects/ProjectContext";
 import { DatiWbsSelectionOverlay } from "@ui/overlays/DatiWbsSelectionOverlay";
+import { setServerIdForModel } from "@core/bim/modelRegistry";
 
 interface ViewerContainerProps {
   showDatiWbsOverlay?: boolean;
@@ -17,38 +18,42 @@ export const ViewerContainer: React.FC<ViewerContainerProps> = ({
   const { currentProjectId } = useProjects();
 
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
+  const container = containerRef.current;
+  if (!container) return;
 
-    // 🔁 Reset totale viewer + registry a ogni cambio progetto
+  let cancelled = false;
+
+  // init viewer (non toccare innerHTML: React gestisce il DOM)
+  initAederaViewer(container);
+
+  (async () => {
+    if (!currentProjectId) return;
+
+    // quando cambio progetto, prima resetto solo la parte logica
     clearModelsRegistry();
-    destroyAederaViewer();
-    container.innerHTML = "";
 
-    // init viewer
-    initAederaViewer(container);
+    const models = await listProjectModels(currentProjectId);
+    for (const m of models) {
+      if (cancelled) return;
+      const modelId = await loadIfcFromUrl(`${API_BASE}${m.url}`, m.label);
+      setServerIdForModel(modelId, m.id);
+    }
+  })().catch((err) => {
+    console.error("[ViewerContainer] load project models failed", err);
+  });
 
-    // carica tutti i modelli del progetto
-    let cancelled = false;
-    (async () => {
-      if (!currentProjectId) return;
-
-      const models = await listProjectModels(currentProjectId);
-      for (const m of models) {
-        if (cancelled) return;
-        await loadIfcFromUrl(`${API_BASE}${m.url}`, m.label);
-      }
-    })().catch((err) => {
-      console.error("[ViewerContainer] load project models failed", err);
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [currentProjectId]);
+  // ✅ cleanup: qui è sicuro distruggere viewer e registry
+  return () => {
+    cancelled = true;
+    try {
+      clearModelsRegistry();
+      destroyAederaViewer();
+    } catch {}
+  };
+}, [currentProjectId]);
 
   return (
-    <div ref={containerRef} className="relative h-full w-full">
+    <div key={currentProjectId ?? "no-project"} ref={containerRef} className="relative h-full w-full">
       {showDatiWbsOverlay ? <DatiWbsSelectionOverlay /> : null}
     </div>
   );

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { loadIfcFromUrl } from "@core/bim/ifcLoader";
-import { API_BASE, uploadProjectModel } from "@core/api/aederaApi";
+import { API_BASE, uploadProjectModel, deleteProjectModel } from "@core/api/aederaApi";
 import { useProjects } from "@core/projects/ProjectContext";
 import {
   listModels,
@@ -8,6 +8,8 @@ import {
   getActiveModelId,
   setActiveModel,
   setModelVisibility,
+  removeModel,
+  setServerIdForModel,
 } from "@core/bim/modelRegistry";
 
 
@@ -19,6 +21,9 @@ export const ModelliView: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [lastFileName, setLastFileName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const [busyOp, setBusyOp] = useState<null | { type: "upload" | "delete"; label?: string }>(null);
+  const isBusy = !!busyOp;
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -72,13 +77,15 @@ export const ModelliView: React.FC = () => {
 
       setError(null);
       setLoading(true);
+      setBusyOp({ type: "upload", label: file.name });
       setLastFileName(file.name);
 
       try {
         if (!currentProjectId) throw new Error("Nessun progetto selezionato");
 
         const dto = await uploadProjectModel(currentProjectId, file, file.name);
-        await loadIfcFromUrl(`${API_BASE}${dto.url}`, dto.label);
+        const modelId = await loadIfcFromUrl(`${API_BASE}${dto.url}`, dto.label);
+        setServerIdForModel(modelId, dto.id);
       } catch (e) {
         console.error(e);
         setError(
@@ -86,6 +93,7 @@ export const ModelliView: React.FC = () => {
         );
       } finally {
         setLoading(false);
+        setBusyOp(null);
       }
     },
     [currentProjectId],
@@ -105,6 +113,29 @@ export const ModelliView: React.FC = () => {
     e.stopPropagation();
     setModelVisibility(model.modelId, !model.visible);
   };
+
+  const handleDeleteModel = async (e: React.MouseEvent, model: ModelInfo) => {
+    e.stopPropagation();
+    if (!currentProjectId) return;
+
+    const ok = window.confirm(`Rimuovere il modello "${model.label}" dal progetto?`);
+    if (!ok) return;
+
+    setError(null);
+    setBusyOp({ type: "delete", label: model.label });
+
+    try {
+      const serverId = model.serverId ?? model.modelId;
+      await deleteProjectModel(currentProjectId, serverId);
+      removeModel(model.modelId);
+    } catch (err) {
+      console.error(err);
+      setError("Errore durante la rimozione del modello. Controlla la console.");
+    } finally {
+      setBusyOp(null);
+    }
+  };
+
 
   return (
     <div className="flex h-full flex-col gap-3 text-sm text-slate-700">
@@ -137,18 +168,25 @@ export const ModelliView: React.FC = () => {
           <button
             type="button"
             onClick={handleOpenFileDialog}
-            disabled={loading}
+            disabled={loading || !currentProjectId}
             className={[
               "inline-flex items-center rounded-md px-3 py-1.5 text-xs font-semibold shadow-sm",
-              loading
-                ? "bg-sky-300 text-white"
+              (loading || !currentProjectId)
+                ? "bg-sky-300 text-white opacity-60 cursor-not-allowed"
                 : "bg-sky-500 text-white hover:bg-sky-600",
             ].join(" ")}
+            title={!currentProjectId ? "Seleziona un progetto prima di importare" : undefined}
           >
             {loading ? "Caricamento..." : "Importa modello IFC"}
           </button>
         </div>
       </div>
+
+      {isBusy && (
+        <div className="h-1 w-full overflow-hidden rounded bg-sky-100">
+          <div className="h-full w-1/2 animate-pulse bg-sky-400" />
+        </div>
+      )}
 
       {/* Corpo */}
       <div className="flex-1 rounded-xl border border-slate-200 bg-white/90 shadow-sm">
@@ -222,6 +260,20 @@ export const ModelliView: React.FC = () => {
                           ].join(" ")}
                         >
                           {model.visible ? "Nascondi" : "Mostra"}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={(e) => void handleDeleteModel(e, model)}
+                          disabled={isBusy}
+                          className={[
+                            "inline-flex items-center rounded-full border px-2 py-[2px] text-[10px] font-medium",
+                            isBusy
+                              ? "border-rose-200 bg-rose-50 text-rose-300 cursor-not-allowed"
+                              : "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100",
+                          ].join(" ")}
+                        >
+                          Rimuovi
                         </button>
                       </div>
                     </div>
