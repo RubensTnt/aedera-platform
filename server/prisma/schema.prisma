@@ -22,6 +22,8 @@ model Project {
 
   ifcModels IfcModel[]
 
+  archivedAt DateTime?
+
   @@index([code])
 }
 

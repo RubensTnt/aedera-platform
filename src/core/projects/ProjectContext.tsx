@@ -7,6 +7,8 @@ import {
   setCurrentProjectId,
   subscribeProjectId,
 } from "./projectStore";
+import { archiveProject, restoreProject, updateProject } from "../api/aederaApi";
+
 
 type ProjectCtx = {
   projects: AederaProject[];
@@ -15,6 +17,10 @@ type ProjectCtx = {
   setProjectById: (id: string) => void;
   createNewProject: (payload: { name: string; code?: string }) => Promise<AederaProject>;
   reloadProjects: () => Promise<void>;
+  renameProject: (id: string, name: string) => Promise<void>;
+  archiveProjectById: (id: string) => Promise<void>;
+  restoreProjectById: (id: string) => Promise<void>;
+  loadArchivedProjects: () => Promise<AederaProject[]>;
 };
 
 const Ctx = createContext<ProjectCtx | null>(null);
@@ -76,7 +82,36 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     setProjectById,
     createNewProject: createNewProjectFn,
     reloadProjects,
+    renameProject: renameProjectFn,
+    archiveProjectById,
+    restoreProjectById,
+    loadArchivedProjects,
   };
+
+  async function renameProjectFn(id: string, name: string) {
+    await updateProject(id, { name });
+    await reloadProjects();
+  }
+
+  async function archiveProjectById(id: string) {
+    await archiveProject(id);
+    await reloadProjects();
+
+    // se ho archiviato quello corrente, sposta su un altro
+    if (getCurrentProjectId() === id) {
+      const items = await listProjects(); // attivi
+      if (items[0]) setCurrentProjectId(items[0].id);
+    }
+  }
+
+  async function restoreProjectById(id: string) {
+    await restoreProject(id);
+    await reloadProjects();
+  }
+
+  async function loadArchivedProjects() {
+    return listProjects("true");
+  }
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

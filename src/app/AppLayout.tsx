@@ -45,27 +45,23 @@ export const AppLayout: React.FC<{ children?: React.ReactNode }> = ({
           </div>
           <div className="flex flex-col leading-tight">
             <span className="text-sm font-semibold">Aedera Platform</span>
-            <span className="text-[11px] text-slate-500">
-              Digital Twin · BIM · WBS
-            </span>
+            <span className="text-[11px] text-slate-500">Digital Twin · BIM · WBS</span>
           </div>
         </div>
 
-        <div className="flex items-center gap-3 text-[11px] text-slate-500">
+        {/* Centro: selezione progetto */}
+        <div className="flex-1 flex justify-center">
           <ProjectSwitcher />
+        </div>
 
-          <button
-            type="button"
-            className="px-2 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50"
-          >
-            Salva
-          </button>
+        {/* Destra: azioni */}
+        <div className="flex items-center gap-3 text-[11px] text-slate-500">
+          <ProjectActionsMenu />
 
           <div className="h-7 w-7 rounded-full bg-slate-200 flex items-center justify-center text-[11px] font-semibold">
             U
           </div>
         </div>
-
       </header>
 
       {/* BODY */}
@@ -149,7 +145,14 @@ export const AppLayout: React.FC<{ children?: React.ReactNode }> = ({
 
 
 function ProjectSwitcher() {
-  const { projects, currentProject, currentProjectId, setProjectById, createNewProject } = useProjects();
+  const {
+    projects,
+    currentProject,
+    currentProjectId,
+    setProjectById,
+    createNewProject,
+  } = useProjects();
+
   const [open, setOpen] = React.useState(false);
   const [name, setName] = React.useState("");
   const [code, setCode] = React.useState("");
@@ -203,3 +206,55 @@ function ProjectSwitcher() {
     </div>
   );
 }
+
+
+  function ProjectActionsMenu() {
+    const { currentProject, renameProject, archiveProjectById } = useProjects();
+    const [open, setOpen] = React.useState(false);
+
+    return (
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="h-8 w-8 rounded border border-slate-200 bg-white hover:bg-slate-50 flex items-center justify-center text-slate-600"
+          title="Azioni progetto"
+          disabled={!currentProject}
+        >
+          ⋯
+        </button>
+
+        {open && (
+          <div className="absolute right-0 top-[110%] z-50 w-56 rounded-md border border-slate-200 bg-white shadow-sm p-1">
+            <button
+              className="w-full text-left px-2 py-2 text-xs rounded hover:bg-slate-50"
+              onClick={async () => {
+                if (!currentProject) return;
+                const next = window.prompt("Nuovo nome progetto:", currentProject.name);
+                if (!next || !next.trim()) return;
+                await renameProject(currentProject.id, next.trim());
+                setOpen(false);
+              }}
+            >
+              ✏️ Rinomina progetto
+            </button>
+
+            <button
+              className="w-full text-left px-2 py-2 text-xs rounded hover:bg-slate-50 text-rose-700"
+              onClick={async () => {
+                if (!currentProject) return;
+                const ok = window.confirm(
+                  `Archiviare il progetto "${currentProject.name}"?\n\nI dati non verranno cancellati.`,
+                );
+                if (!ok) return;
+                await archiveProjectById(currentProject.id);
+                setOpen(false);
+              }}
+            >
+              📦 Archivia progetto
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }

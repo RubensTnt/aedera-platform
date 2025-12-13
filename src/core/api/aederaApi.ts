@@ -116,10 +116,9 @@ export async function bulkGetDatiWbs(
   return allRows;
 }
 
-export async function listProjects(): Promise<AederaProject[]> {
-  const res = await fetch(`${API_BASE}/api/projects`, {
-    credentials: "include",
-  });
+export async function listProjects(archived?: "true" | "all"): Promise<AederaProject[]> {
+  const qs = archived ? `?archived=${archived}` : "";
+  const res = await fetch(`${API_BASE}/api/projects${qs}`, { credentials: "include" });
   if (!res.ok) throw new Error(`listProjects failed: ${res.status}`);
   return res.json();
 }
@@ -134,6 +133,7 @@ export async function createProject(payload: { name: string; code?: string }) {
   if (!res.ok) throw new Error(`createProject failed: ${res.status}`);
   return res.json();
 }
+
 
 
 
@@ -178,3 +178,36 @@ export async function deleteProjectModel(projectId: string, modelId: string) {
   if (!res.ok) throw new Error(`deleteProjectModel failed: ${res.status}`);
   return res.json();
 }
+
+export async function updateProject(
+  id: string,
+  payload: { name?: string; code?: string },
+): Promise<AederaProject> {
+  const res = await fetch(`${API_BASE}/api/projects/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(`updateProject failed: ${res.status}`);
+  return res.json();
+}
+
+export async function archiveProject(id: string) {
+  const res = await fetch(`${API_BASE}/api/projects/${id}/archive`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(`archiveProject failed: ${res.status}`);
+  return res.json();
+}
+
+export async function restoreProject(id: string) {
+  const res = await fetch(`${API_BASE}/api/projects/${id}/restore`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(`restoreProject failed: ${res.status}`);
+  return res.json();
+}
+
