@@ -70,6 +70,20 @@ export function getAederaViewer(): AederaViewerContext | null {
   return viewerContext;
 }
 
+export function destroyAederaViewer(): void {
+  if (!viewerContext) return;
+
+  try {
+    (viewerContext.components as any).dispose?.();
+  } catch {}
+
+  try {
+    const rendererAny = viewerContext.world.renderer as any;
+    rendererAny?.dispose?.();
+  } catch {}
+
+  viewerContext = null;
+}
 
 // DEBUG GLOBAL EXPORTS
 import * as ModelProps from "./modelProperties";

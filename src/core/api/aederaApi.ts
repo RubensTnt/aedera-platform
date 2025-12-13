@@ -5,7 +5,7 @@ import { getCurrentProjectId } from "../projects/projectStore";
 import type { AederaProject } from "../projects/projectTypes";
 
 // Per ora: server locale
-const API_BASE = "http://localhost:4000";
+export const API_BASE = "http://localhost:4000";
 
 // === DEPRECATO ===
 /* export function getProjectId(): string {
@@ -135,3 +135,46 @@ export async function createProject(payload: { name: string; code?: string }) {
   return res.json();
 }
 
+
+
+export type IfcModelDto = {
+  id: string;
+  projectId: string;
+  label: string;
+  fileName: string;
+  fileKey: string;
+  size?: number;
+  createdAt: string;
+  url: string; // dal server (/storage/...)
+};
+
+export async function listProjectModels(projectId: string): Promise<IfcModelDto[]> {
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/models`, {
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(`listProjectModels failed: ${res.status}`);
+  return res.json();
+}
+
+export async function uploadProjectModel(projectId: string, file: File, label?: string) {
+  const fd = new FormData();
+  fd.append("file", file);
+  if (label) fd.append("label", label);
+
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/models/upload`, {
+    method: "POST",
+    body: fd,
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(`uploadProjectModel failed: ${res.status}`);
+  return res.json() as Promise<IfcModelDto>;
+}
+
+export async function deleteProjectModel(projectId: string, modelId: string) {
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/models/${modelId}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(`deleteProjectModel failed: ${res.status}`);
+  return res.json();
+}

@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { loadIfcFromFile } from "@core/bim/ifcLoader";
+import { loadIfcFromUrl } from "@core/bim/ifcLoader";
+import { API_BASE, uploadProjectModel } from "@core/api/aederaApi";
+import { useProjects } from "@core/projects/ProjectContext";
 import {
   listModels,
   type ModelInfo,
@@ -7,6 +9,7 @@ import {
   setActiveModel,
   setModelVisibility,
 } from "@core/bim/modelRegistry";
+
 
 export const ModelliView: React.FC = () => {
   const [models, setModels] = useState<ModelInfo[]>([]);
@@ -24,6 +27,8 @@ export const ModelliView: React.FC = () => {
     setModels(all);
     setActiveModelIdState(getActiveModelId());
   }, []);
+
+  const { currentProjectId } = useProjects();
 
   useEffect(() => {
     // prima lettura
@@ -70,8 +75,10 @@ export const ModelliView: React.FC = () => {
       setLastFileName(file.name);
 
       try {
-        await loadIfcFromFile(file);
-        // il registry emette l'evento "aedera:modelListUpdated"
+        if (!currentProjectId) throw new Error("Nessun progetto selezionato");
+
+        const dto = await uploadProjectModel(currentProjectId, file, file.name);
+        await loadIfcFromUrl(`${API_BASE}${dto.url}`, dto.label);
       } catch (e) {
         console.error(e);
         setError(
@@ -81,7 +88,7 @@ export const ModelliView: React.FC = () => {
         setLoading(false);
       }
     },
-    [],
+    [currentProjectId],
   );
 
   const hasModels = models.length > 0;

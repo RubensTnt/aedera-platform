@@ -154,3 +154,14 @@ export async function loadIfcFromFile(file: File): Promise<void> {
     );
   }
 }
+
+
+
+export async function loadIfcFromUrl(url: string, label?: string) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to fetch IFC: ${res.status}`);
+  const buf = await res.arrayBuffer();
+  const fileName = label ?? url.split("/").pop() ?? "model.ifc";
+  const file = new File([buf], fileName, { type: "application/octet-stream" });
+  return loadIfcFromFile(file);
+}
