@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { createProject, listProjects } from "../api/aederaApi";
+import { createProject, listProjects, getMe } from "../api/aederaApi";
 import type { AederaProject } from "./projectTypes";
 import {
   initProjectStore,
@@ -39,6 +39,15 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
 
   async function reloadProjects() {
     try {
+      // 1) check session
+      const me = await getMe();
+      if (!me) {
+        setProjects([]);
+        initProjectStore(null);        // pulisce lo store persistente
+        setCurrentProjectIdState(null); // pulisce lo state React
+        return;
+      }
+
       const items = await listProjects();
       setProjects(items);
 
@@ -48,10 +57,16 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
       if (!storeValid) {
         // fallback: primo progetto se esiste
         if (items[0]) setCurrentProjectId(items[0].id);
+        else {
+          initProjectStore(null);
+          setCurrentProjectIdState(null);
+        }
       }
     } catch (err) {
       console.error("[ProjectProvider] reloadProjects failed", err);
-      setProjects([]); // UI resta viva
+      setProjects([]);
+      initProjectStore(null);
+      setCurrentProjectIdState(null);
     }
   }
 
@@ -74,19 +89,6 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     setCurrentProjectId(p.id);
     return p;
   }
-
-  const value: ProjectCtx = {
-    projects,
-    currentProjectId: currentProjectIdState,
-    currentProject,
-    setProjectById,
-    createNewProject: createNewProjectFn,
-    reloadProjects,
-    renameProject: renameProjectFn,
-    archiveProjectById,
-    restoreProjectById,
-    loadArchivedProjects,
-  };
 
   async function renameProjectFn(id: string, name: string) {
     await updateProject(id, { name });
@@ -112,6 +114,19 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
   async function loadArchivedProjects() {
     return listProjects("true");
   }
+
+  const value: ProjectCtx = {
+    projects,
+    currentProjectId: currentProjectIdState,
+    currentProject,
+    setProjectById,
+    createNewProject: createNewProjectFn,
+    reloadProjects,
+    renameProject: renameProjectFn,
+    archiveProjectById,
+    restoreProjectById,
+    loadArchivedProjects,
+  };
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
