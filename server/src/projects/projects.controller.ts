@@ -1,9 +1,10 @@
-import { Body, Controller, Get, Post, Param, Patch } from "@nestjs/common";
+import { Body, Controller, Get, Post, Req, Param, Patch } from "@nestjs/common";
 import { ProjectsService } from "./projects.service";
 import { Query } from "@nestjs/common";
 import { UseGuards } from "@nestjs/common";
 import { SessionGuard } from "../auth/session.guard";
 import { PlatformManagerGuard } from "../auth/platform-role.guard";
+import type { Request } from "express";
 
 
 @UseGuards(SessionGuard)
@@ -22,8 +23,9 @@ export class ProjectsController {
 
   @Post()
   @UseGuards(PlatformManagerGuard)
-  create(@Body() body: { id?: string; name: string; code?: string }) {
-    return this.projects.create(body);
+  create(@Req() req: Request, @Body() body: { id?: string; name: string; code?: string }) {
+    const userId = (req as any).user.id; // set da SessionGuard
+    return this.projects.create(body, userId);
   }
 
   @Patch(":id")

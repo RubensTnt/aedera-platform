@@ -26,10 +26,31 @@ export class ProjectsService {
     });
   }
 
-  create(data: { id?: string; name: string; code?: string }) {
-    return this.prisma.project.create({ data });
-  }
+  async create(body: { id?: string; name: string; code?: string }, userId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const project = await tx.project.create({
+        data: {
+          id: body.id,
+          name: body.name,
+          code: body.code ?? null,
+        },
+      });
 
+      await tx.projectMember.upsert({
+        where: {
+          projectId_userId: { projectId: project.id, userId },
+        },
+        update: { role: "OWNER" },
+        create: {
+          projectId: project.id,
+          userId,
+          role: "OWNER",
+        },
+      });
+
+      return project;
+    });
+  }
 
   async update(id: string, body: { name?: string; code?: string }) {
     const data: any = {};

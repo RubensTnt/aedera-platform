@@ -416,63 +416,64 @@ export const PoFilterPanel: React.FC = () => {
       )}
 
       {coverage && (
-        <div className="mt-3 border-t pt-2 text-xs space-y-1">
-          <div className="font-semibold">Copertura DATI_WBS ⇄ PO</div>
-          <div>
-            <strong>Elementi IFC totali:</strong>{" "}
-            {coverage.totalElements}
-          </div>
-          <div>
-            <strong>Elementi con Pset DATI_WBS:</strong>{" "}
-            {coverage.elementsWithDatiWbs}
-          </div>
-          <div>
-            <strong>Elementi con TariffaCodice (DATI_WBS):</strong>{" "}
-            {coverage.elementsWithTariffFromDatiWbs}
-          </div>
-          <div>
-            <strong>Voci PO con tariffa:</strong>{" "}
-            {coverage.poItemsWithTariff}
-          </div>
-          <div>
-            <strong>Codici tariffa distinti in DATI_WBS:</strong>{" "}
-            {coverage.distinctTariffsInDatiWbs}
-          </div>
-          <div>
-            <strong>Codici tariffa distinti nel PO:</strong>{" "}
-            {coverage.distinctTariffsInPo}
-          </div>
+        <details className="mt-3 border-t pt-2 text-xs">
+          <summary className="cursor-pointer select-none font-semibold text-slate-700">
+            Copertura DATI_WBS ⇄ PO
+            <span className="ml-2 font-normal text-slate-400">
+              (clicca per aprire/chiudere)
+            </span>
+          </summary>
 
-          {coverage.tariffCodesInDatiWbsNotInPo.length > 0 && (
-            <div className="mt-1">
-              <strong>Codici in DATI_WBS ma NON nel PO:</strong>{" "}
-              <span className="text-amber-700">
-                {coverage.tariffCodesInDatiWbsNotInPo.join(", ")}
-              </span>
+          <div className="mt-2 space-y-1">
+            <div>
+              <strong>Elementi IFC totali:</strong> {coverage.totalElements}
             </div>
-          )}
-
-          {coverage.tariffCodesInPoNotInDatiWbs.length > 0 && (
-            <div className="mt-1">
-              <strong>Codici nel PO ma NON in DATI_WBS:</strong>{" "}
-              <span className="text-amber-700">
-                {coverage.tariffCodesInPoNotInDatiWbs.join(", ")}
-              </span>
+            <div>
+              <strong>Elementi con Pset DATI_WBS:</strong> {coverage.elementsWithDatiWbs}
             </div>
-          )}
+            <div>
+              <strong>Elementi con TariffaCodice (DATI_WBS):</strong> {coverage.elementsWithTariffFromDatiWbs}
+            </div>
+            <div>
+              <strong>Voci PO con tariffa:</strong> {coverage.poItemsWithTariff}
+            </div>
+            <div>
+              <strong>Codici tariffa distinti in DATI_WBS:</strong> {coverage.distinctTariffsInDatiWbs}
+            </div>
+            <div>
+              <strong>Codici tariffa distinti nel PO:</strong> {coverage.distinctTariffsInPo}
+            </div>
 
-          {coverage.tariffCodesInDatiWbsNotInPo.length === 0 &&
-            coverage.tariffCodesInPoNotInDatiWbs.length === 0 &&
-            (coverage.distinctTariffsInDatiWbs > 0 ||
-              coverage.distinctTariffsInPo > 0) && (
-              <div className="mt-1 text-emerald-700">
-                Tutti i codici tariffa presenti in DATI_WBS coincidono con
-                quelli del PO.
+            {/* Liste lunghe: mettile in box scrollabile */}
+            {coverage.tariffCodesInDatiWbsNotInPo.length > 0 && (
+              <div className="mt-2">
+                <strong>Codici in DATI_WBS ma NON nel PO:</strong>
+                <div className="mt-1 max-h-24 overflow-auto rounded border border-slate-200 bg-slate-50 p-2 text-amber-700">
+                  {coverage.tariffCodesInDatiWbsNotInPo.join(", ")}
+                </div>
               </div>
             )}
-        </div>
-      )}
 
+            {coverage.tariffCodesInPoNotInDatiWbs.length > 0 && (
+              <div className="mt-2">
+                <strong>Codici nel PO ma NON in DATI_WBS:</strong>
+                <div className="mt-1 max-h-24 overflow-auto rounded border border-slate-200 bg-slate-50 p-2 text-amber-700">
+                  {coverage.tariffCodesInPoNotInDatiWbs.join(", ")}
+                </div>
+              </div>
+            )}
+
+            {coverage.tariffCodesInDatiWbsNotInPo.length === 0 &&
+              coverage.tariffCodesInPoNotInDatiWbs.length === 0 &&
+              (coverage.distinctTariffsInDatiWbs > 0 ||
+                coverage.distinctTariffsInPo > 0) && (
+                <div className="mt-2 text-emerald-700">
+                  Tutti i codici tariffa presenti in DATI_WBS coincidono con quelli del PO.
+                </div>
+              )}
+          </div>
+        </details>
+      )}
     </div>
   );
 };

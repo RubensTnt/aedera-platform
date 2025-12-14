@@ -108,6 +108,8 @@ export const PoGrid: React.FC<PoGridProps> = ({
 }) => {
   const [search, setSearch] = React.useState("");
 
+  const [selectedId, setSelectedId] = React.useState<string | null>(null);
+
   const poItems = items ?? poEngine.items;
   const handleTextChange = React.useCallback(
     (rowId: string, field: keyof POItem, value: string) => {
@@ -138,13 +140,7 @@ export const PoGrid: React.FC<PoGridProps> = ({
         cell: ({ row }) => (
           <button
             type="button"
-            style={{
-              border: "none",
-              background: "transparent",
-              color: "#f87171",
-              cursor: "pointer",
-              fontSize: 11,
-            }}
+            className="text-rose-500 hover:text-rose-600 px-1"
             onClick={(e) => {
               e.stopPropagation();
               onDeleteItem?.(row.original.id);
@@ -164,7 +160,7 @@ export const PoGrid: React.FC<PoGridProps> = ({
           const value = (info.getValue() as string | undefined) ?? "";
           return (
             <input
-              style={{ width: "100%", border: "none", background: "transparent" }}
+              className="w-full bg-transparent outline-none rounded px-1 focus:ring-2 focus:ring-sky-200"
               value={value}
               onClick={(e) => e.stopPropagation()}
               onChange={(e) =>
@@ -182,7 +178,7 @@ export const PoGrid: React.FC<PoGridProps> = ({
           const value = (info.getValue() as string | undefined) ?? "";
           return (
             <input
-              style={{ width: "100%", border: "none", background: "transparent" }}
+              className="w-full bg-transparent outline-none rounded px-1 focus:ring-2 focus:ring-sky-200"
               value={value}
               onClick={(e) => e.stopPropagation()}
               onChange={(e) =>
@@ -200,7 +196,7 @@ export const PoGrid: React.FC<PoGridProps> = ({
           const value = (info.getValue() as string | undefined) ?? "";
           return (
             <input
-              style={{ width: "100%", border: "none", background: "transparent" }}
+              className="w-full bg-transparent outline-none rounded px-1 focus:ring-2 focus:ring-sky-200"
               value={value}
               onClick={(e) => e.stopPropagation()}
               onChange={(e) =>
@@ -218,7 +214,7 @@ export const PoGrid: React.FC<PoGridProps> = ({
           const value = (info.getValue() as string | undefined) ?? "";
           return (
             <input
-              style={{ width: "100%", border: "none", background: "transparent" }}
+              className="w-full bg-transparent outline-none rounded px-1 focus:ring-2 focus:ring-sky-200"
               value={value}
               onClick={(e) => e.stopPropagation()}
               onChange={(e) =>
@@ -236,7 +232,7 @@ export const PoGrid: React.FC<PoGridProps> = ({
           const value = (info.getValue() as string | undefined) ?? "";
           return (
             <input
-              style={{ width: "100%", border: "none", background: "transparent" }}
+              className="w-full bg-transparent outline-none rounded px-1 focus:ring-2 focus:ring-sky-200"
               value={value}
               onClick={(e) => e.stopPropagation()}
               onChange={(e) =>
@@ -254,7 +250,7 @@ export const PoGrid: React.FC<PoGridProps> = ({
           const value = (info.getValue() as string | undefined) ?? "";
           return (
             <input
-              style={{ width: "100%", border: "none", background: "transparent" }}
+              className="w-full bg-transparent outline-none rounded px-1 focus:ring-2 focus:ring-sky-200"
               value={value}
               onClick={(e) => e.stopPropagation()}
               onChange={(e) =>
@@ -272,7 +268,7 @@ export const PoGrid: React.FC<PoGridProps> = ({
           const value = (info.getValue() as string | undefined) ?? "";
           return (
             <input
-              style={{ width: "100%", border: "none", background: "transparent" }}
+              className="w-full bg-transparent outline-none rounded px-1 focus:ring-2 focus:ring-sky-200"
               value={value}
               onClick={(e) => e.stopPropagation()}
               onChange={(e) =>
@@ -291,7 +287,7 @@ export const PoGrid: React.FC<PoGridProps> = ({
           const value = (info.getValue() as string | undefined) ?? "";
           return (
             <input
-              style={{ width: "100%", border: "none", background: "transparent" }}
+              className="w-full bg-transparent outline-none rounded px-1 focus:ring-2 focus:ring-sky-200"
               value={value}
               onClick={(e) => e.stopPropagation()}
               onChange={(e) =>
@@ -311,7 +307,7 @@ export const PoGrid: React.FC<PoGridProps> = ({
           const value = v != null ? String(v) : "";
           return (
             <input
-              style={{ width: "100%", border: "none", background: "transparent" }}
+              className="w-full bg-transparent outline-none rounded px-1 focus:ring-2 focus:ring-sky-200"
               value={value}
               onClick={(e) => e.stopPropagation()}
               onChange={(e) =>
@@ -330,7 +326,7 @@ export const PoGrid: React.FC<PoGridProps> = ({
           const value = v != null ? v.toString() : "";
           return (
             <input
-              style={{ width: "100%", border: "none", background: "transparent" }}
+              className="w-full bg-transparent outline-none rounded px-1 focus:ring-2 focus:ring-sky-200"
               value={value}
               onClick={(e) => e.stopPropagation()}
               onChange={(e) =>
@@ -349,7 +345,7 @@ export const PoGrid: React.FC<PoGridProps> = ({
           const value = v != null ? v.toString() : "";
           return (
             <input
-              style={{ width: "100%", border: "none", background: "transparent" }}
+              className="w-full bg-transparent outline-none rounded px-1 focus:ring-2 focus:ring-sky-200"
               value={value}
               onClick={(e) => e.stopPropagation()}
               onChange={(e) =>
@@ -376,41 +372,19 @@ export const PoGrid: React.FC<PoGridProps> = ({
   });
 
   return (
-    <section
-      style={{
-        border: "1px solid #444",
-        padding: "0.5rem",
-        borderRadius: 4,
-        fontSize: 12,
-        display: "flex",
-        flexDirection: "column",
-        height: "100%",
-        minHeight: 0,
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: "0.25rem",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-          <strong>Voci PO ({poItems.length})</strong>
+    <section className="h-full min-h-0 flex flex-col p-2 text-xs">
+      {/* Toolbar */}
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="flex items-center gap-2">
+          <div className="font-semibold text-slate-800">
+            Voci PO <span className="text-slate-500">({poItems.length})</span>
+          </div>
+
           {onAddItem && (
             <button
               type="button"
               onClick={() => onAddItem()}
-              style={{
-                fontSize: 11,
-                padding: "2px 6px",
-                borderRadius: 4,
-                border: "1px solid #4ade80",
-                backgroundColor: "#022c22",
-                color: "#bbf7d0",
-                cursor: "pointer",
-              }}
+              className="rounded-md bg-emerald-700 px-3 py-1.5 text-white text-xs hover:bg-emerald-800"
             >
               + Nuova riga
             </button>
@@ -422,36 +396,20 @@ export const PoGrid: React.FC<PoGridProps> = ({
           placeholder="Filtra testo..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          style={{
-            fontSize: 12,
-            padding: "2px 4px",
-            borderRadius: 4,
-            border: "1px solid #555",
-          }}
+          className="w-56 max-w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-sky-200"
         />
       </div>
 
-      <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
-        <table
-          style={{
-            width: "100%",
-            borderCollapse: "collapse",
-          }}
-        >
+      {/* Table */}
+      <div className="flex-1 min-h-0 overflow-auto rounded-md border border-slate-200 bg-white">
+        <table className="w-full border-collapse">
           <thead>
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
                   <th
                     key={header.id}
-                    style={{
-                      borderBottom: "1px solid #555",
-                      padding: "2px 4px",
-                      textAlign: "left",
-                      position: "sticky",
-                      top: 0,
-                      backgroundColor: "#111",
-                    }}
+                    className="sticky top-0 z-10 bg-slate-100 border-b border-slate-200 px-2 py-1 text-left font-semibold text-slate-700"
                   >
                     {flexRender(
                       header.column.columnDef.header,
@@ -462,29 +420,26 @@ export const PoGrid: React.FC<PoGridProps> = ({
               </tr>
             ))}
           </thead>
+
           <tbody>
             {table.getRowModel().rows.map((row) => (
               <tr
                 key={row.id}
-                style={{ cursor: "pointer" }}
+                className={[
+                  "cursor-pointer hover:bg-slate-50",
+                  row.original.id === selectedId ? "bg-emerald-50" : "",
+                ].join(" ")}
                 onClick={() => {
+                  setSelectedId(row.original.id);
+
                   const tariff = row.original.tariffCode;
-                  if (tariff) {
-                    void highlightTariff(tariff);
-                  }
+                  if (tariff) void highlightTariff(tariff);
                 }}
               >
                 {row.getVisibleCells().map((cell) => (
                   <td
                     key={cell.id}
-                    style={{
-                      borderBottom: "1px solid #333",
-                      padding: "2px 4px",
-                      fontSize: 11,
-                      whiteSpace: "nowrap",
-                      textOverflow: "ellipsis",
-                      overflow: "hidden",
-                    }}
+                    className="border-b border-slate-100 px-2 py-1 align-top text-slate-800 whitespace-nowrap overflow-hidden text-ellipsis max-w-[420px]"
                     title={String(cell.getValue() ?? "")}
                   >
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -497,4 +452,5 @@ export const PoGrid: React.FC<PoGridProps> = ({
       </div>
     </section>
   );
+
 };

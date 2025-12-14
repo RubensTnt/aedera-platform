@@ -134,21 +134,17 @@ export const PoUploadPanel: React.FC<PoUploadPanelProps> = ({
   };
 
   return (
-    <section
-      style={{
-        border: "1px solid #444",
-        padding: "0.5rem",
-        borderRadius: 4,
-        fontSize: 12,
-      }}
-    >
-      <div style={{ marginBottom: "0.25rem", fontWeight: 600 }}>
-        Carica Preventivo Operativo (Excel)
-      </div>
+    <section className="rounded-md border border-slate-200 bg-white p-3 shadow-sm text-sm space-y-2">
+      <div className="font-semibold">Carica Preventivo Operativo (Excel)</div>
 
-      <input type="file" accept=".xlsx,.xls" onChange={handleFileChange} />
+      <input
+        className="block w-full text-xs file:mr-3 file:rounded-md file:border-0 file:bg-slate-900 file:px-3 file:py-1.5 file:text-white hover:file:bg-slate-800"
+        type="file"
+        accept=".xlsx,.xls"
+        onChange={handleFileChange}
+      />
 
-      <div style={{ marginTop: "0.25rem" }}>
+      <div className="text-xs text-slate-600 space-y-1">
         <div>{status}</div>
         <div>Voci PO caricate: {itemsCount}</div>
       </div>

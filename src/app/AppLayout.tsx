@@ -4,6 +4,8 @@ import React from "react";
 import { Link, useLocation } from "react-router-dom";
 import { ViewerContainer } from "@ui/layout/ViewerContainer";
 import { useProjects } from "../core/projects/ProjectContext";
+import { useEffect, useState } from "react";
+import { getMe, logout } from "../core/api/aederaApi";
 
 
 type NavItem = {
@@ -28,7 +30,21 @@ export const AppLayout: React.FC<{ children?: React.ReactNode }> = ({
   children,
 }) => {
   const location = useLocation();
+  
+  const [me, setMe] = useState<any | null>(null);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
 
+  useEffect(() => {
+    (async () => {
+      const u = await getMe();
+      setMe(u);
+    })();
+  }, []);
+
+  const initials = me?.email
+    ? me.email[0].toUpperCase()
+    : "U";
+    
   const isActive = (path: string) =>
     location.pathname === path ||
     (path !== "/" && location.pathname.startsWith(path));
@@ -51,15 +67,44 @@ export const AppLayout: React.FC<{ children?: React.ReactNode }> = ({
 
         {/* Centro: selezione progetto */}
         <div className="flex-1 flex justify-center">
-          <ProjectSwitcher />
+          <ProjectSwitcher me={me} />
         </div>
 
         {/* Destra: azioni */}
         <div className="flex items-center gap-3 text-[11px] text-slate-500">
           <ProjectActionsMenu />
+          <div className="relative">
+            <button
+              onClick={() => setUserMenuOpen((v) => !v)}
+              className="h-7 w-7 rounded-full bg-sky-600 flex items-center justify-center text-[11px] font-semibold text-white hover:bg-sky-700"
+              title={me?.email ?? "Utente"}
+            >
+              {initials}
+            </button>
 
-          <div className="h-7 w-7 rounded-full bg-slate-200 flex items-center justify-center text-[11px] font-semibold">
-            U
+            {userMenuOpen && (
+              <div className="absolute right-0 top-[110%] z-50 w-48 rounded-md border border-slate-200 bg-white shadow-sm p-2">
+                <div className="px-2 py-1 text-[11px] text-slate-500">
+                  {me?.email}
+                </div>
+
+                <div className="px-2 py-1 text-[10px] uppercase tracking-wide text-slate-400">
+                  {me?.platformRole}
+                </div>
+
+                <hr className="my-2 border-slate-200" />
+
+                <button
+                  onClick={async () => {
+                    await logout();
+                    window.location.href = "/login";
+                  }}
+                  className="w-full text-left px-2 py-1.5 text-[12px] rounded hover:bg-slate-50 text-rose-600"
+                >
+                  Logout
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </header>
@@ -144,7 +189,7 @@ export const AppLayout: React.FC<{ children?: React.ReactNode }> = ({
 };
 
 
-function ProjectSwitcher() {
+function ProjectSwitcher({ me }: { me: any | null }) {
   const {
     projects,
     currentProject,
@@ -183,24 +228,30 @@ function ProjectSwitcher() {
             ))}
           </div>
 
-          <hr style={{ margin: "10px 0" }} />
 
-          <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 6 }}>Nuovo progetto</div>
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nome" style={{ width: "100%", marginBottom: 6 }} />
-          <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="Codice (opz.)" style={{ width: "100%", marginBottom: 6 }} />
+          {me?.platformRole === "PLATFORM_MANAGER" && (
+            <>
+              <hr style={{ margin: "10px 0" }} />
+              <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 6 }}>
+                Nuovo progetto
+              </div>
+              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nome" style={{ width: "100%", marginBottom: 6 }} />
+              <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="Codice (opz.)" style={{ width: "100%", marginBottom: 6 }} />
 
-          <button
-            disabled={!name.trim()}
-            onClick={async () => {
-              await createNewProject({ name: name.trim(), code: code.trim() || undefined });
-              setName("");
-              setCode("");
-              setOpen(false);
-            }}
-            style={{ width: "100%" }}
-          >
-            Crea
-          </button>
+              <button
+                disabled={!name.trim()}
+                onClick={async () => {
+                  await createNewProject({ name: name.trim(), code: code.trim() || undefined });
+                  setName("");
+                  setCode("");
+                  setOpen(false);
+                }}
+                style={{ width: "100%" }}
+              >
+                Crea
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>
@@ -208,53 +259,58 @@ function ProjectSwitcher() {
 }
 
 
-  function ProjectActionsMenu() {
-    const { currentProject, renameProject, archiveProjectById } = useProjects();
-    const [open, setOpen] = React.useState(false);
+function ProjectActionsMenu() {
+  const { currentProject, renameProject, archiveProjectById } = useProjects();
+  const [open, setOpen] = React.useState(false);
 
-    return (
-      <div className="relative">
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          className="h-8 w-8 rounded border border-slate-200 bg-white hover:bg-slate-50 flex items-center justify-center text-slate-600"
-          title="Azioni progetto"
-          disabled={!currentProject}
-        >
-          ⋯
-        </button>
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="h-8 w-8 rounded border border-slate-200 bg-white hover:bg-slate-50 flex items-center justify-center text-slate-600"
+        title="Azioni progetto"
+        disabled={!currentProject}
+      >
+        ⋯
+      </button>
 
-        {open && (
-          <div className="absolute right-0 top-[110%] z-50 w-56 rounded-md border border-slate-200 bg-white shadow-sm p-1">
-            <button
-              className="w-full text-left px-2 py-2 text-xs rounded hover:bg-slate-50"
-              onClick={async () => {
-                if (!currentProject) return;
-                const next = window.prompt("Nuovo nome progetto:", currentProject.name);
-                if (!next || !next.trim()) return;
-                await renameProject(currentProject.id, next.trim());
-                setOpen(false);
-              }}
-            >
-              ✏️ Rinomina progetto
-            </button>
+      {open && (
+        <div className="absolute right-0 top-[110%] z-50 w-56 rounded-md border border-slate-200 bg-white shadow-sm p-1">
+          <button
+            className="w-full text-left px-2 py-2 text-xs rounded hover:bg-slate-50"
+            onClick={async () => {
+              if (!currentProject) return;
+              const next = window.prompt("Nuovo nome progetto:", currentProject.name);
+              if (!next || !next.trim()) return;
+              await renameProject(currentProject.id, next.trim());
+              setOpen(false);
+            }}
+          >
+            ✏️ Rinomina progetto
+          </button>
 
-            <button
-              className="w-full text-left px-2 py-2 text-xs rounded hover:bg-slate-50 text-rose-700"
-              onClick={async () => {
-                if (!currentProject) return;
-                const ok = window.confirm(
-                  `Archiviare il progetto "${currentProject.name}"?\n\nI dati non verranno cancellati.`,
-                );
-                if (!ok) return;
-                await archiveProjectById(currentProject.id);
-                setOpen(false);
-              }}
-            >
-              📦 Archivia progetto
-            </button>
-          </div>
-        )}
-      </div>
-    );
-  }
+          <button
+            className="w-full text-left px-2 py-2 text-xs rounded hover:bg-slate-50 text-rose-700"
+            onClick={async () => {
+              if (!currentProject) return;
+              const ok = window.confirm(
+                `Archiviare il progetto "${currentProject.name}"?\n\nI dati non verranno cancellati.`,
+              );
+              if (!ok) return;
+              await archiveProjectById(currentProject.id);
+              setOpen(false);
+            }}
+          >
+            📦 Archivia progetto
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+async function onLogout() {
+  await logout();
+  window.location.href = "/login";
+}

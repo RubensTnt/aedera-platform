@@ -40,35 +40,25 @@ export const PoWorkspace: React.FC = () => {
   }, []);
 
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: "0.5rem",
-        height: "100%",
-        minHeight: 0,
-        overflow: "hidden", // 🟢 IMPORTANTISSIMO
-      }}
-    >
+    <div className="h-full min-h-0 flex flex-col gap-3">
+      {/* Top: upload + filtri */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-3 max-h-52 overflow-auto">
+        <div className="xl:col-span-1">
+          <PoUploadPanel
+            onItemsLoaded={(loaded) => {
+              poEngine.setItems(loaded);
+              setItems([...poEngine.items]);
+            }}
+          />
+        </div>
 
-      {/* SEZIONE SUPERIORE SCROLLABILE (Upload + Filtri) */}
-      <div style={{
-        flexShrink: 0,
-        overflowY: "auto",
-        maxHeight: "45%",   // puoi regolarlo (40-50%)
-        paddingRight: "2px"
-      }}>
-        <PoUploadPanel
-          poId="PO-Struttura-Catania"
-          onItemsLoaded={handleItemsLoaded}
-        />
-        <div style={{ marginTop: "0.5rem" }}>
+        <div className="xl:col-span-2">
           <PoFilterPanel />
         </div>
       </div>
 
-      {/* TABELLA (scorre nel suo spazio) */}
-      <div style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
+      {/* Grid */}
+      <div className="flex-1 min-h-0 overflow-hidden rounded-md border border-slate-200 bg-white">
         <PoGrid
           items={items}
           onAddItem={handleAddItem}
