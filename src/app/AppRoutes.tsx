@@ -15,6 +15,7 @@ import { ImpostazioniView } from "@modules/impostazioni/ImpostazioniView";
 import { LoginPage } from "../auth/LoginPage";
 import { RequireAuth } from "../auth/RequireAuth";
 import { useProjects } from "../core/projects/ProjectContext";
+import { ContabilitaGridOnlyView } from "@modules/contabilita/ContabilitaGridOnlyView";
 
 
 export const AppRoutes: React.FC = () => {
@@ -36,6 +37,15 @@ export const AppRoutes: React.FC = () => {
       <Routes>
         {/* Route pubblica */}
         <Route path="/login" element={<LoginRoute />} />
+
+        <Route
+          path="/contabilita/grid"
+          element={
+            <RequireAuth>
+              <ContabilitaGridOnlyView />
+            </RequireAuth>
+          }
+        />
 
         {/* Tutto il resto è protetto e usa il layout */}
         <Route
@@ -59,6 +69,7 @@ export const AppRoutes: React.FC = () => {
             </RequireAuth>
           }
         />
+
       </Routes>
     </BrowserRouter>
   );

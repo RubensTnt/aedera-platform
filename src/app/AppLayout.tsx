@@ -6,6 +6,8 @@ import { ViewerContainer } from "@ui/layout/ViewerContainer";
 import { useProjects } from "../core/projects/ProjectContext";
 import { useEffect, useState } from "react";
 import { getMe, logout } from "../core/api/aederaApi";
+import { VerticalSplitter } from "@ui/layout/VerticalSplitter";
+import { resizeAederaViewer } from "../core/bim/thatopen";
 
 
 type NavItem = {
@@ -171,17 +173,29 @@ export const AppLayout: React.FC<{ children?: React.ReactNode }> = ({
 
         {/* MAIN AREA */}
         <main className="flex-1 flex flex-col min-h-0">
-          {/* VIEWPORT 3D */}
-          <section className="flex-1 min-h-[260px] border-b border-slate-200 bg-slate-200 relative">
-            <ViewerContainer showDatiWbsOverlay={showDatiWbsOverlay} />
-          </section>
-
-          {/* PANNELLO INFERIORE (MODULO CORRENTE) */}
-          <section className="h-72 min-h-[220px] bg-slate-100 px-4 py-3 overflow-hidden">
-            <div className="h-full min-h-0 flex flex-col rounded-xl border border-slate-200 bg-white shadow-sm p-3 overflow-y-auto">
-              {children}
-            </div>
-          </section>
+          {/* MAIN SPLIT: Viewer (top) + Modulo corrente (bottom) */}
+          <VerticalSplitter
+            initialTopPx={520}
+            minTopPx={260}
+            minBottomPx={220}
+            top={
+              <div className="h-full w-full border-b border-slate-200 bg-slate-200 relative">
+                <ViewerContainer showDatiWbsOverlay={showDatiWbsOverlay} />
+              </div>
+            }
+            bottom={
+              <div className="h-full w-full bg-slate-100 px-4 py-3 overflow-hidden">
+                <div className="h-full min-h-0 flex flex-col rounded-xl border border-slate-200 bg-white shadow-sm p-3 overflow-y-auto">
+                  {children}
+                </div>
+              </div>
+            }
+            onApplySize={() => {
+              resizeAederaViewer();
+              // opzionale: tienilo solo come fallback generale
+              // window.dispatchEvent(new Event("resize"));
+            }}
+          />
         </main>
       </div>
     </div>

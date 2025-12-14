@@ -85,6 +85,42 @@ export function destroyAederaViewer(): void {
   viewerContext = null;
 }
 
+export function resizeAederaViewer(): void {
+  const ctx = getAederaViewer();
+  if (!ctx) return;
+
+  const renderer = ctx.world.renderer;
+  if (!renderer) return;
+
+  const rendererAny = renderer as any;
+
+  // In SimpleRenderer esiste "container" (vedi API) e resize(Vector2?)
+  const container: HTMLElement | null =
+    rendererAny?.container ??
+    rendererAny?.three?.domElement?.parentElement ??
+    null;
+
+  if (!container) return;
+
+  const rect = container.getBoundingClientRect();
+  const w = Math.max(1, Math.floor(rect.width));
+  const h = Math.max(1, Math.floor(rect.height));
+
+  // 1) Resize del renderer (ThatOpen)
+  renderer.resize(new THREE.Vector2(w, h));
+
+  // 2) Fix aspect (Three.js) per evitare immagine “stirata”
+  // Aggiorna l’aspect in modo coerente con ThatOpen
+  if (ctx.world.camera) {
+    ctx.world.camera.updateAspect();
+  }
+
+  // 3) Forza un update del renderer (se in MANUAL mode o se serve un kick)
+  try {
+    (ctx.world.renderer as any).update?.();
+  } catch {}
+}
+
 // DEBUG GLOBAL EXPORTS
 import * as ModelProps from "./modelProperties";
 import { poEngine } from "../po/poEngine";

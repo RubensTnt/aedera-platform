@@ -46,6 +46,7 @@ export const PoWorkspace: React.FC = () => {
         <div className="xl:col-span-1">
           <PoUploadPanel
             onItemsLoaded={(loaded) => {
+              sessionStorage.setItem("aedera_po_items", JSON.stringify(loaded));
               poEngine.setItems(loaded);
               setItems([...poEngine.items]);
             }}
@@ -55,6 +56,22 @@ export const PoWorkspace: React.FC = () => {
         <div className="xl:col-span-2">
           <PoFilterPanel />
         </div>
+      </div>
+
+      <div className="flex items-center justify-end">
+        <button
+          type="button"
+          onClick={() => {
+            window.open(
+              "/contabilita/grid",
+              "aederaPoGrid",
+              "popup=yes,width=1400,height=900"
+            );
+          }}
+          className="text-xs rounded-md border border-slate-200 bg-white px-3 py-1.5 hover:bg-slate-50"
+        >
+          Stacca tabella (popup)
+        </button>
       </div>
 
       {/* Grid */}

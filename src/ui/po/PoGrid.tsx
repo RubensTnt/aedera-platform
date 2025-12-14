@@ -401,22 +401,52 @@ export const PoGrid: React.FC<PoGridProps> = ({
       </div>
 
       {/* Table */}
-      <div className="overflow-x-auto rounded-md border border-slate-200 bg-white">
-        <table className="w-full border-collapse">
+      <div className="relative w-full rounded-md border border-slate-200 bg-white">
+        <table className="w-full border-collapse table-fixed">
           <thead>
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
-                {headerGroup.headers.map((header) => (
-                  <th
-                    key={header.id}
-                    className="sticky top-0 z-10 bg-slate-100 border-b border-slate-200 px-2 py-1 text-left font-semibold text-slate-700"
-                  >
-                    {flexRender(
-                      header.column.columnDef.header,
-                      header.getContext(),
-                    )}
-                  </th>
-                ))}
+                {headerGroup.headers.map((header) => {
+                  const colId = header.column.id;
+
+                  // Percentuali (somma ~100%). Descrizione più ampia, le altre compatte.
+                  const widthStyle: React.CSSProperties =
+                    colId === "actions"
+                      ? { width: "3%" }
+                      : colId === "code"
+                        ? { width: "7%" }
+                        : colId === "wbs7"
+                          ? { width: "6%" }
+                          : colId === "wbs8"
+                            ? { width: "6%" }
+                            : colId === "wbs9"
+                              ? { width: "6%" }
+                              : colId === "rcm"
+                                ? { width: "6%" }
+                                : colId === "tariffCode"
+                                  ? { width: "8%" }
+                                  : colId === "description"
+                                    ? { width: "36%" }
+                                    : colId === "unit"
+                                      ? { width: "5%" }
+                                      : colId === "baselineQuantity"
+                                        ? { width: "6%" }
+                                        : colId === "unitPrice"
+                                          ? { width: "6%" }
+                                          : colId === "baselineAmount"
+                                            ? { width: "5%" }
+                                            : { width: "6%" };
+
+                  return (
+                    <th
+                      key={header.id}
+                      style={widthStyle}
+                      className="sticky top-0 z-30 bg-slate-100 border-b border-slate-200 px-2 py-1 text-left font-semibold text-slate-700 shadow-sm"
+                    >
+                      {flexRender(header.column.columnDef.header, header.getContext())}
+                    </th>
+                  );
+                })}
               </tr>
             ))}
           </thead>
@@ -439,7 +469,12 @@ export const PoGrid: React.FC<PoGridProps> = ({
                 {row.getVisibleCells().map((cell) => (
                   <td
                     key={cell.id}
-                    className="border-b border-slate-100 px-2 py-1 align-top text-slate-800 whitespace-nowrap overflow-hidden text-ellipsis max-w-[420px]"
+                    className={[
+                      "border-b border-slate-100 px-2 py-1 align-top text-slate-800 overflow-hidden",
+                      cell.column.id === "description"
+                        ? "whitespace-normal break-words"
+                        : "whitespace-nowrap text-ellipsis",
+                    ].join(" ")}
                     title={String(cell.getValue() ?? "")}
                   >
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
