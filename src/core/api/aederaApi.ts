@@ -13,6 +13,32 @@ export const API_BASE = "http://localhost:4000";
   return localStorage.getItem("aedera:projectId") ?? "aedera-demo";
 } */
 
+export async function login(email: string, password: string, remember: boolean) {
+  const res = await fetch(`${API_BASE}/api/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ email, password, remember }),
+  });
+  if (!res.ok) throw new Error("login failed");
+  return res.json();
+}
+
+export async function logout() {
+  await fetch(`${API_BASE}/api/auth/logout`, {
+    method: "POST",
+    credentials: "include",
+  });
+}
+
+export async function getMe() {
+  const res = await fetch(`${API_BASE}/api/auth/me`, {
+    credentials: "include",
+  });
+  if (!res.ok) return null;
+  return res.json();
+}
+
 // === NUOVO - prendiamo il Progetto dallo store ===
 export function requireProjectId(): string {
   const pid = getCurrentProjectId();
@@ -134,6 +160,38 @@ export async function createProject(payload: { name: string; code?: string }) {
   return res.json();
 }
 
+export async function updateProject(
+  id: string,
+  payload: { name?: string; code?: string },
+): Promise<AederaProject> {
+  const res = await fetch(`${API_BASE}/api/projects/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(`updateProject failed: ${res.status}`);
+  return res.json();
+}
+
+export async function archiveProject(id: string) {
+  const res = await fetch(`${API_BASE}/api/projects/${id}/archive`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(`archiveProject failed: ${res.status}`);
+  return res.json();
+}
+
+export async function restoreProject(id: string) {
+  const res = await fetch(`${API_BASE}/api/projects/${id}/restore`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(`restoreProject failed: ${res.status}`);
+  return res.json();
+}
+
 
 
 
@@ -176,38 +234,6 @@ export async function deleteProjectModel(projectId: string, modelId: string) {
     credentials: "include",
   });
   if (!res.ok) throw new Error(`deleteProjectModel failed: ${res.status}`);
-  return res.json();
-}
-
-export async function updateProject(
-  id: string,
-  payload: { name?: string; code?: string },
-): Promise<AederaProject> {
-  const res = await fetch(`${API_BASE}/api/projects/${id}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-    credentials: "include",
-  });
-  if (!res.ok) throw new Error(`updateProject failed: ${res.status}`);
-  return res.json();
-}
-
-export async function archiveProject(id: string) {
-  const res = await fetch(`${API_BASE}/api/projects/${id}/archive`, {
-    method: "POST",
-    credentials: "include",
-  });
-  if (!res.ok) throw new Error(`archiveProject failed: ${res.status}`);
-  return res.json();
-}
-
-export async function restoreProject(id: string) {
-  const res = await fetch(`${API_BASE}/api/projects/${id}/restore`, {
-    method: "POST",
-    credentials: "include",
-  });
-  if (!res.ok) throw new Error(`restoreProject failed: ${res.status}`);
   return res.json();
 }
 

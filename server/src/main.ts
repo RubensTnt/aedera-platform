@@ -4,10 +4,13 @@ import { AppModule } from "./app.module";
 import { json, urlencoded } from "express";
 import { join } from "path";
 import { NestExpressApplication } from "@nestjs/platform-express";
+import cookieParser from "cookie-parser";
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
+  app.use(cookieParser());
+  
   // ✅ Aumenta limite body JSON (bulk-get può essere grande)
   app.use(json({ limit: "5mb" }));
   app.use(urlencoded({ extended: true, limit: "5mb" }));

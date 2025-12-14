@@ -1,5 +1,10 @@
 import { Body, Controller, Param, Post } from "@nestjs/common";
 import { DatiWbsService } from "./dati-wbs.service";
+import { SessionGuard } from "../auth/session.guard";
+import { UseGuards } from "@nestjs/common";
+
+
+@UseGuards(SessionGuard)
 
 @Controller("/api/projects/:projectId")
 export class DatiWbsController {

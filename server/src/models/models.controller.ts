@@ -14,10 +14,15 @@ import { join } from "path";
 import { randomUUID } from "crypto";
 import * as fs from "fs";
 import { ModelsService } from "./models.service";
+import { SessionGuard } from "../auth/session.guard";
+import { UseGuards } from "@nestjs/common";
+
 
 function ensureDir(dir: string) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
+
+@UseGuards(SessionGuard)
 
 @Controller("/api/projects/:projectId/models")
 export class ModelsController {

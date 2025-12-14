@@ -22,6 +22,8 @@ model Project {
 
   ifcModels IfcModel[]
 
+  members ProjectMember[]
+
   archivedAt DateTime?
 
   @@index([code])
@@ -73,3 +75,52 @@ model ElementDatiWbs {
   @@index([projectId])
   @@index([ifcGlobalId])
 }
+
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String
+  name         String?
+  createdAt    DateTime  @default(now())
+
+  sessions     Session[]
+  memberships  ProjectMember[]
+
+  platformRole PlatformRole @default(USER)
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    String
+  tokenHash String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model ProjectMember {
+  projectId String
+  userId    String
+  role      ProjectRole
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, userId])
+}
+
+enum PlatformRole {
+  PLATFORM_MANAGER
+  USER
+}
+
+enum ProjectRole {
+  OWNER
+  ADMIN
+  EDITOR
+  VIEWER
+}
+

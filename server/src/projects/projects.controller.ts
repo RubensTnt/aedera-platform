@@ -1,6 +1,12 @@
 import { Body, Controller, Get, Post, Param, Patch } from "@nestjs/common";
 import { ProjectsService } from "./projects.service";
 import { Query } from "@nestjs/common";
+import { UseGuards } from "@nestjs/common";
+import { SessionGuard } from "../auth/session.guard";
+import { PlatformManagerGuard } from "../auth/platform-role.guard";
+
+
+@UseGuards(SessionGuard)
 
 @Controller("/api/projects")
 export class ProjectsController {
@@ -15,6 +21,7 @@ export class ProjectsController {
   }
 
   @Post()
+  @UseGuards(PlatformManagerGuard)
   create(@Body() body: { id?: string; name: string; code?: string }) {
     return this.projects.create(body);
   }
