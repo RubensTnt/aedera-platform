@@ -40,9 +40,9 @@ export const PoWorkspace: React.FC = () => {
   }, []);
 
   return (
-    <div className="h-full min-h-0 flex flex-col gap-3">
+    <div className="flex-1 min-h-0 flex flex-col gap-3">
       {/* Top: upload + filtri */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-3 max-h-52 overflow-auto">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
         <div className="xl:col-span-1">
           <PoUploadPanel
             onItemsLoaded={(loaded) => {
@@ -58,7 +58,7 @@ export const PoWorkspace: React.FC = () => {
       </div>
 
       {/* Grid */}
-      <div className="flex-1 min-h-0 overflow-hidden rounded-md border border-slate-200 bg-white">
+      <div className="rounded-md border border-slate-200 bg-white overflow-x-auto">
         <PoGrid
           items={items}
           onAddItem={handleAddItem}

@@ -177,8 +177,8 @@ export const AppLayout: React.FC<{ children?: React.ReactNode }> = ({
           </section>
 
           {/* PANNELLO INFERIORE (MODULO CORRENTE) */}
-          <section className="h-72 min-h-[220px] bg-slate-100 px-4 py-3 overflow-y-auto">
-            <div className="h-full rounded-xl border border-slate-200 bg-white shadow-sm p-3">
+          <section className="h-72 min-h-[220px] bg-slate-100 px-4 py-3 overflow-hidden">
+            <div className="h-full min-h-0 flex flex-col rounded-xl border border-slate-200 bg-white shadow-sm p-3 overflow-y-auto">
               {children}
             </div>
           </section>

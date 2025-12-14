@@ -401,7 +401,7 @@ export const PoGrid: React.FC<PoGridProps> = ({
       </div>
 
       {/* Table */}
-      <div className="flex-1 min-h-0 overflow-auto rounded-md border border-slate-200 bg-white">
+      <div className="overflow-x-auto rounded-md border border-slate-200 bg-white">
         <table className="w-full border-collapse">
           <thead>
             {table.getHeaderGroups().map((headerGroup) => (
