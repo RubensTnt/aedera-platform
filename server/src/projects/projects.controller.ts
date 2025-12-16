@@ -5,6 +5,8 @@ import { UseGuards } from "@nestjs/common";
 import { SessionGuard } from "../auth/session.guard";
 import { PlatformManagerGuard } from "../auth/platform-role.guard";
 import type { Request } from "express";
+import { ProjectRoles } from "../authz/project-roles.decorator";
+import { ProjectRoleGuard } from "../authz/project-role.guard";
 
 
 @UseGuards(SessionGuard)
@@ -14,12 +16,11 @@ export class ProjectsController {
   constructor(private readonly projects: ProjectsService) {}
 
   @Get()
-  list(@Query("archived") archived?: string) {
-    // archived: undefined -> attivi
-    // "true" -> archiviati
-    // "all" -> tutti
-    return this.projects.list({ archived });
+  list(@Req() req: Request, @Query("archived") archived?: string) {
+    const user = (req as any).user;
+    return this.projects.list({ archived, user });
   }
+
 
   @Post()
   @UseGuards(PlatformManagerGuard)
@@ -29,19 +30,22 @@ export class ProjectsController {
   }
 
   @Patch(":id")
-  update(
-    @Param("id") id: string,
-    @Body() body: { name?: string; code?: string },
-  ) {
+  @UseGuards(ProjectRoleGuard)
+  @ProjectRoles("ADMIN", "OWNER")
+  update(@Param("id") id: string, @Body() body: any) {
     return this.projects.update(id, body);
   }
 
   @Post(":id/archive")
+  @UseGuards(ProjectRoleGuard)
+  @ProjectRoles("ADMIN", "OWNER")
   archive(@Param("id") id: string) {
     return this.projects.archive(id);
   }
 
   @Post(":id/restore")
+  @UseGuards(ProjectRoleGuard)
+  @ProjectRoles("ADMIN", "OWNER")
   restore(@Param("id") id: string) {
     return this.projects.restore(id);
   }

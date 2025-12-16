@@ -5,23 +5,30 @@ import { PrismaService } from "../prisma/prisma.service";
 export class ProjectsService {
   constructor(private prisma: PrismaService) {}
 
-  async list(opts?: { archived?: string }) {
+  async list(opts?: { archived?: string; user?: { id: string; platformRole?: string } }) {
     const archived = opts?.archived;
+    const user = opts?.user;
 
-    if (archived === "all") {
-      return this.prisma.project.findMany({ orderBy: { createdAt: "desc" } });
+    const baseWhere: any = {};
+
+    // filtro archived
+    if (archived === "true") baseWhere.archivedAt = { not: null };
+    else if (archived === "all") {
+      // nessun filtro archivedAt
+    } else {
+      baseWhere.archivedAt = null; // default attivi
     }
 
-    if (archived === "true") {
-      return this.prisma.project.findMany({
-        where: { archivedAt: { not: null } },
-        orderBy: { createdAt: "desc" },
-      });
+    // filtro membership (a meno che PLATFORM_MANAGER)
+    const isManager = user?.platformRole === "PLATFORM_MANAGER";
+
+    if (!isManager) {
+      // solo progetti in cui sono membro
+      baseWhere.members = { some: { userId: user?.id ?? "__no_user__" } };
     }
 
-    // default: attivi
     return this.prisma.project.findMany({
-      where: { archivedAt: null },
+      where: baseWhere,
       orderBy: { createdAt: "desc" },
     });
   }

@@ -14,8 +14,10 @@ import { join } from "path";
 import { randomUUID } from "crypto";
 import * as fs from "fs";
 import { ModelsService } from "./models.service";
-import { SessionGuard } from "../auth/session.guard";
 import { UseGuards } from "@nestjs/common";
+import { SessionGuard } from "../auth/session.guard";
+import { ProjectRoleGuard } from "../authz/project-role.guard";
+import { ProjectRoles } from "../authz/project-roles.decorator";
 
 
 function ensureDir(dir: string) {
@@ -29,6 +31,8 @@ export class ModelsController {
   constructor(private readonly models: ModelsService) {}
 
   @Get()
+  @UseGuards(ProjectRoleGuard)
+  @ProjectRoles("VIEWER", "EDITOR", "ADMIN", "OWNER")
   async list(@Param("projectId") projectId: string) {
     const rows = await this.models.list(projectId);
     return rows.map((m) => ({
@@ -38,6 +42,8 @@ export class ModelsController {
   }
 
   @Post("upload")
+  @UseGuards(ProjectRoleGuard)
+  @ProjectRoles("EDITOR", "ADMIN", "OWNER")
   @UseInterceptors(
     FileInterceptor("file", {
       storage: diskStorage({
@@ -84,6 +90,8 @@ export class ModelsController {
   }
 
   @Delete(":modelId")
+  @UseGuards(ProjectRoleGuard)
+  @ProjectRoles("EDITOR", "ADMIN", "OWNER")
   async remove(
     @Param("projectId") projectId: string,
     @Param("modelId") modelId: string,

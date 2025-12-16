@@ -1,0 +1,18 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: aedera-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: aedera_dev
+      POSTGRES_USER: aedera
+      POSTGRES_PASSWORD: aedera
+    volumes:
+      - aedera_pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  aedera_pgdata:
