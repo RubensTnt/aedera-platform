@@ -55,6 +55,37 @@ export class ProjectsService {
         },
       });
 
+      // Seed param definitions (idempotente)
+      await tx.elementParamDefinition.upsert({
+        where: { projectId_key: { projectId: project.id, key: "codiceMateriale" } },
+        update: {},
+        create: {
+          projectId: project.id,
+          key: "codiceMateriale",
+          label: "Codice materiale",
+          type: "STRING",
+          isMulti: false,
+          isActive: true,
+          isRequired: false,
+          isReadOnly: false,
+        },
+      });
+
+      await tx.elementParamDefinition.upsert({
+        where: { projectId_key: { projectId: project.id, key: "fornitore" } },
+        update: { type: "SUPPLIER", isMulti: true },
+        create: {
+          projectId: project.id,
+          key: "fornitore",
+          label: "Fornitore",
+          type: "SUPPLIER",
+          isMulti: true,
+          isActive: true,
+          isRequired: false,
+          isReadOnly: false,
+        },
+      });
+
       return project;
     });
   }

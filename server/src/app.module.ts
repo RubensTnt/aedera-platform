@@ -4,6 +4,8 @@ import { ProjectsModule } from "./projects/projects.module";
 import { DatiWbsModule } from "./dati-wbs/dati-wbs.module";
 import { ModelsModule } from "./models/models.module";
 import { AuthModule } from "./auth/auth.module";
+import { ElementParamsModule } from "./element-params/element-params.module";
+import { SuppliersModule } from "./suppliers/suppliers.module";
 
 @Module({
   imports: [
@@ -12,6 +14,8 @@ import { AuthModule } from "./auth/auth.module";
     ProjectsModule,
     ModelsModule,
     DatiWbsModule,
+    ElementParamsModule,
+    SuppliersModule,
   ],
 })
 export class AppModule {}

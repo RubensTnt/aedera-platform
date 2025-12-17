@@ -8,6 +8,7 @@ import { getAederaViewer } from "./thatopen";
 import {
   type DatiWbsProps,
   getDatiWbsProps,
+  getElementRecord,
 } from "./modelProperties";
 import type { DatiWbsScanResult } from "./datiWbsScanner";
 import { writeDatiWbs } from "./propertyIO";
@@ -63,6 +64,7 @@ export type SelectionMap = ModelIdMap;
 export interface SelectedElementWithDatiWbs {
   modelId: string;
   localId: number;
+  ifcGlobalId?: string;
   datiWbs?: DatiWbsProps;
 }
 
@@ -144,8 +146,9 @@ export async function getSelectedElementsWithDatiWbs(): Promise<
   for (const [modelId, localIds] of Object.entries(selection)) {
     const ids = Array.from(localIds as Set<number>);
     for (const localId of ids) {
-      const datiWbs = getDatiWbsProps(modelId, localId);
-      result.push({ modelId, localId, datiWbs });
+    const datiWbs = getDatiWbsProps(modelId, localId);
+    const rec = getElementRecord(modelId, localId);
+    result.push({ modelId, localId, ifcGlobalId: rec?.globalId, datiWbs });
     }
   }
 

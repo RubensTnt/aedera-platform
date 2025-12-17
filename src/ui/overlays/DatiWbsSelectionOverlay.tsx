@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import {
   getSelectedElementsWithDatiWbs,
   applyDatiWbsToSelection,
@@ -7,6 +7,8 @@ import {
 import type { DatiWbsProps } from "@core/bim/modelProperties";
 import { useDatiWbsProfile } from "../../hooks/useDatiWbsProfile";
 import type { DatiWbsProfile } from "../../core/bim/datiWbsProfile";
+import { useCurrentProject } from "@core/projects/ProjectContext";
+import { bulkGetElementParams, setElementParamValue, listSuppliers, type SupplierDto } from "@core/api/aederaApi";
 
 
 type DatiEditKey = keyof DatiWbsProps;
@@ -56,6 +58,12 @@ function isKeyRequired(profile: DatiWbsProfile, key: DatiEditKey): boolean {
   return cfg?.required ?? false;
 }
 
+
+function getGlobalId(item: any): string | null {
+  return item?.ifcGlobalId ?? null;
+}
+
+
 export const DatiWbsSelectionOverlay: React.FC = () => {
   const [profile] = useDatiWbsProfile();
   const [selectionCount, setSelectionCount] = useState(0);
@@ -63,6 +71,33 @@ export const DatiWbsSelectionOverlay: React.FC = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [editLevels, setEditLevels] = useState<LevelEditState[] | null>(null);
   const [isApplying, setIsApplying] = useState(false);
+
+  const project = useCurrentProject();
+  const projectId = project?.id ?? null;
+
+  const [suppliers, setSuppliers] = useState<SupplierDto[]>([]);
+  const supplierById = useMemo(() => new Map(suppliers.map(s => [s.id, s])), [suppliers]);
+
+  const [extraValueLabel, setExtraValueLabel] = useState<{ fornitore: string; codiceMateriale: string }>({
+    fornitore: "",
+    codiceMateriale: "",
+  });
+
+  const [extraRawValues, setExtraRawValues] = useState<{
+    fornitore: string[] | null;
+    codiceMateriale: string | null;
+  }>({
+    fornitore: null,
+    codiceMateriale: null,
+  });
+
+  const [extraEdit, setExtraEdit] = useState<{
+    fornitore: { isMixed: boolean; initial: string[]; value: string[] };
+    codiceMateriale: { isMixed: boolean; initial: string; value: string };
+  } | null>(null);
+
+  const [supplierPickerOpen, setSupplierPickerOpen] = useState(false);
+
 
   useEffect(() => {
     let disposed = false;
@@ -79,6 +114,87 @@ export const DatiWbsSelectionOverlay: React.FC = () => {
       if (disposed) return;
 
       setSelectionCount(selected.length);
+
+      const globalIds = selected
+        .map((it) => getGlobalId(it))
+        .filter((x): x is string => !!x);
+
+      if (projectId && globalIds.length) {
+        try {
+          const resp = await bulkGetElementParams(projectId, {
+            globalIds,
+            keys: ["fornitore", "codiceMateriale"],
+          });
+
+          // fornitore: array di supplierId[]
+          const supplierSets = globalIds.map((gid) => {
+            const raw = resp.values?.[gid]?.["fornitore"];
+            const ids = Array.isArray(raw) ? raw.filter((v) => typeof v === "string") : [];
+            // normalizza e ordina per confronto stabile
+            return ids.slice().sort();
+          });
+
+          const codiceVals = globalIds.map((gid) => {
+            const raw = resp.values?.[gid]?.["codiceMateriale"];
+            return typeof raw === "string" ? raw.trim() : "";
+          });
+
+
+          // label fornitore
+          const nonEmptySets = supplierSets.filter((arr) => arr.length > 0);
+          let fornitoreLabel = "";
+          if (!nonEmptySets.length) {
+            fornitoreLabel = "";
+          } else {
+            const key0 = JSON.stringify(nonEmptySets[0]);
+            const allSame = nonEmptySets.every((s) => JSON.stringify(s) === key0);
+            if (!allSame) {
+              fornitoreLabel = "varie";
+            } else {
+              const names = nonEmptySets[0]
+                .map((id) => supplierById.get(id)?.name ?? id)
+                .join(", ");
+              fornitoreLabel = names || "";
+            }
+          }
+
+          // label codiceMateriale
+          const nonEmptyCod = codiceVals.filter((v) => v !== "");
+          let codiceLabel = "";
+          if (!nonEmptyCod.length) codiceLabel = "";
+          else {
+            const uniq = new Set(nonEmptyCod);
+            codiceLabel = uniq.size === 1 ? [...uniq][0] : "varie";
+          }
+
+          // raw values (per edit prefill)
+          let rawFornitore: string[] | null = null;
+          if (nonEmptySets.length) {
+            const key0 = JSON.stringify(nonEmptySets[0]);
+            const allSame = nonEmptySets.every((s) => JSON.stringify(s) === key0);
+            if (allSame) {
+              rawFornitore = nonEmptySets[0];
+            }
+          }
+
+          let rawCodice: string | null = null;
+          if (nonEmptyCod.length) {
+            const uniq = new Set(nonEmptyCod);
+            if (uniq.size === 1) rawCodice = [...uniq][0];
+          }
+
+          setExtraRawValues({
+            fornitore: rawFornitore,
+            codiceMateriale: rawCodice,
+          });
+
+          setExtraValueLabel({ fornitore: fornitoreLabel, codiceMateriale: codiceLabel });
+        } catch {
+          setExtraValueLabel({ fornitore: "", codiceMateriale: "" });
+        }
+      } else {
+        setExtraValueLabel({ fornitore: "", codiceMateriale: "" });
+      }
 
       const activeKeys = getActiveDatiKeys(profile);
 
@@ -130,6 +246,24 @@ export const DatiWbsSelectionOverlay: React.FC = () => {
     };
   }, [isEditing, profile]);
 
+
+  useEffect(() => {
+    let disposed = false;
+    async function load() {
+      if (!projectId) return;
+      try {
+        const rows = await listSuppliers(projectId);
+        if (!disposed) setSuppliers(rows);
+      } catch {
+        // silenzioso: se fallisce vedrai comunque errori quando provi a salvare
+        if (!disposed) setSuppliers([]);
+      }
+    }
+    void load();
+    return () => { disposed = true; };
+  }, [projectId]);
+
+
   if (!levels.length && selectionCount === 0) {
     return null;
   }
@@ -155,12 +289,38 @@ export const DatiWbsSelectionOverlay: React.FC = () => {
     });
 
     setEditLevels(nextEditLevels);
+
+    const fornitoreIsMixed = extraValueLabel.fornitore === "varie";
+    const fornitoreInitial =
+      !fornitoreIsMixed && extraRawValues.fornitore
+        ? [...extraRawValues.fornitore]
+        : [];
+
+
+    const codiceIsMixed = extraValueLabel.codiceMateriale === "varie";
+    const codiceInitial = codiceIsMixed ? "" : (extraValueLabel.codiceMateriale || "");
+
+    setExtraEdit({
+      fornitore: {
+        isMixed: fornitoreIsMixed,
+        initial: fornitoreInitial,
+        value: fornitoreInitial,
+      },
+      codiceMateriale: {
+        isMixed: codiceIsMixed,
+        initial: codiceInitial,
+        value: codiceInitial,
+      },
+    });
+
     setIsEditing(true);
   };
 
   const handleCancelEdit = () => {
     setIsEditing(false);
     setEditLevels(null);
+    setSupplierPickerOpen(false);
+    setExtraEdit(null);
   };
 
   const handleChangeLevel = (key: DatiEditKey, value: string) => {
@@ -197,15 +357,66 @@ export const DatiWbsSelectionOverlay: React.FC = () => {
       }
     }
 
-    if (!Object.keys(patch).length) {
+    const hasWbsPatch = Object.keys(patch).length > 0;
+
+    const hasExtraPatch =
+      !!extraEdit &&
+      (
+        // Codice materiale: scrivi se diverso dall’iniziale (anche per cancellare)
+        extraEdit.codiceMateriale.value.trim() !== extraEdit.codiceMateriale.initial.trim() ||
+        // Fornitore: scrivi se diverso dall’iniziale (anche per cancellare)
+        JSON.stringify([...extraEdit.fornitore.value].sort()) !== JSON.stringify([...extraEdit.fornitore.initial].sort())
+      );
+
+    if (!hasWbsPatch && !hasExtraPatch) {
       setIsEditing(false);
       setEditLevels(null);
+      setSupplierPickerOpen(false);
+      setExtraEdit(null);
       return;
     }
 
+
     try {
       setIsApplying(true);
-      await applyDatiWbsToSelection(patch);
+      if (hasWbsPatch) {
+        await applyDatiWbsToSelection(patch);
+      }
+
+      // Applica parametri extra (codiceMateriale + fornitore) ai selezionati
+      if (projectId) {
+        const selected = await getSelectedElementsWithDatiWbs();
+        const globalIds = selected.map(getGlobalId).filter((x): x is string => !!x);
+        if (selected.length > 0 && globalIds.length === 0) {
+          console.warn("[Overlay] Nessun ifcGlobalId trovato nella selezione. Probabile: proprietà non ancora indicizzate o modello non estratto.");
+        }
+
+        const tasks: Promise<any>[] = [];
+
+        if (extraEdit) {
+          const nextCod = extraEdit.codiceMateriale.value.trim();
+          const shouldWriteCod =
+            (!extraEdit.codiceMateriale.isMixed && nextCod !== extraEdit.codiceMateriale.initial.trim()) ||
+            (extraEdit.codiceMateriale.isMixed && nextCod !== "");
+
+          const nextSup = extraEdit.fornitore.value;
+          const shouldWriteSup =
+            JSON.stringify([...nextSup].sort()) !== JSON.stringify([...extraEdit.fornitore.initial].sort());
+
+          for (const gid of globalIds) {
+            if (shouldWriteCod) {
+              tasks.push(setElementParamValue(projectId, gid, "codiceMateriale", nextCod || null));
+            }
+            if (shouldWriteSup) {
+              tasks.push(setElementParamValue(projectId, gid, "fornitore", nextSup));
+            }
+          }
+        }
+
+        if (tasks.length) {
+          await Promise.all(tasks);
+        }
+      }
     } catch (error) {
       console.error(
         "[DATI_WBS] Errore durante l'applicazione alla selezione",
@@ -215,6 +426,8 @@ export const DatiWbsSelectionOverlay: React.FC = () => {
       setIsApplying(false);
       setIsEditing(false);
       setEditLevels(null);
+      setSupplierPickerOpen(false);
+      setExtraEdit(null);
     }
   };
 
@@ -290,6 +503,26 @@ export const DatiWbsSelectionOverlay: React.FC = () => {
           </div>
         )}
 
+        {!isEditing && (
+          <>
+            <div className="mt-2 pt-2 border-t border-slate-200">
+              <div className="text-[10px] font-semibold text-slate-600 mb-1">Parametri extra</div>
+
+              <div className="grid grid-cols-[auto,1fr] gap-x-2 gap-y-1">
+                <div className="truncate text-[10px] text-slate-500">Codice materiale</div>
+                <div className={["truncate font-mono", extraValueLabel.codiceMateriale === "varie" ? "text-amber-500" : "text-slate-800"].join(" ")}>
+                  {extraValueLabel.codiceMateriale === "varie" ? "varie" : (extraValueLabel.codiceMateriale || "—")}
+                </div>
+
+                <div className="truncate text-[10px] text-slate-500">Fornitore</div>
+                <div className={["truncate", extraValueLabel.fornitore === "varie" ? "text-amber-500" : "text-slate-800"].join(" ")}>
+                  {extraValueLabel.fornitore === "varie" ? "varie" : (extraValueLabel.fornitore || "—")}
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
         {/* Editing */}
         {isEditing && editLevels && (
           <>
@@ -345,6 +578,108 @@ export const DatiWbsSelectionOverlay: React.FC = () => {
                 })}
               </div>
             </div>
+
+            {extraEdit && (
+              <div className="mt-3 pt-2 border-t border-slate-200">
+                <div className="text-[10px] font-semibold text-slate-600 mb-2">Parametri extra</div>
+
+                {/* Codice materiale */}
+                <div className="grid grid-cols-[auto,1fr] gap-x-2 gap-y-2">
+                  <label className="pt-[3px] text-[10px] text-slate-500">Codice materiale</label>
+                  <input
+                    type="text"
+                    value={extraEdit.codiceMateriale.value}
+                    onChange={(e) =>
+                      setExtraEdit((prev) =>
+                        prev
+                          ? { ...prev, codiceMateriale: { ...prev.codiceMateriale, value: e.target.value } }
+                          : prev
+                      )
+                    }
+                    className="w-full rounded-md border border-slate-300 px-2 py-[2px] text-[11px] font-mono bg-white focus:outline-none focus:ring-1 focus:ring-sky-500 focus:border-sky-500"
+                    placeholder={extraEdit.codiceMateriale.isMixed ? "varie (lascia vuoto per non cambiare)" : ""}
+                  />
+
+                  {/* Fornitore multi-select (solo anagrafica) */}
+                  <label className="pt-[3px] text-[10px] text-slate-500">Fornitore</label>
+
+                  <div className="relative">
+                    <button
+                      type="button"
+                      className="w-full text-left rounded-md border border-slate-300 bg-white px-2 py-[3px] text-[11px] hover:bg-slate-50"
+                      onClick={() => setSupplierPickerOpen((v) => !v)}
+                    >
+                      {extraEdit.fornitore.value.length
+                        ? `${extraEdit.fornitore.value.length} selezionati`
+                        : extraEdit.fornitore.isMixed
+                          ? "varie (seleziona per sovrascrivere)"
+                          : "Seleziona fornitori"}
+                    </button>
+
+                    {supplierPickerOpen && (
+                      <div className="absolute z-30 mt-1 w-full rounded-md border border-slate-200 bg-white shadow-lg max-h-48 overflow-auto">
+                        {suppliers.length === 0 ? (
+                          <div className="px-3 py-2 text-[10px] text-slate-500">
+                            Nessun fornitore in anagrafica. Aggiungine uno in Impostazioni → Fornitori.
+                          </div>
+                        ) : (
+                          <div className="p-2 flex flex-col gap-1">
+                            {suppliers.map((s) => {
+                              const checked = extraEdit.fornitore.value.includes(s.id);
+                              return (
+                                <label
+                                  key={s.id}
+                                  className="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-50 cursor-pointer"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={(e) => {
+                                      const next = e.target.checked
+                                        ? [...extraEdit.fornitore.value, s.id]
+                                        : extraEdit.fornitore.value.filter((id) => id !== s.id);
+
+                                      setExtraEdit((prev) =>
+                                        prev ? { ...prev, fornitore: { ...prev.fornitore, value: next } } : prev,
+                                      );
+                                    }}
+                                  />
+                                  <span className="text-[11px] text-slate-800">{s.name}</span>
+                                  {s.code ? (
+                                    <span className="ml-auto text-[10px] text-slate-400 font-mono">{s.code}</span>
+                                  ) : null}
+                                </label>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        <div className="border-t border-slate-200 p-2 flex items-center justify-between">
+                          <button
+                            type="button"
+                            className="text-[10px] text-slate-500 hover:text-slate-700"
+                            onClick={() =>
+                              setExtraEdit((prev) =>
+                                prev ? { ...prev, fornitore: { ...prev.fornitore, value: [] } } : prev
+                              )
+                            }
+                          >
+                            Svuota
+                          </button>
+                          <button
+                            type="button"
+                            className="px-2 py-1 rounded-md text-[10px] border border-slate-200 bg-white hover:bg-slate-50"
+                            onClick={() => setSupplierPickerOpen(false)}
+                          >
+                            Chiudi
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Footer azioni */}
             <div className="mt-2 flex items-center justify-between gap-2">

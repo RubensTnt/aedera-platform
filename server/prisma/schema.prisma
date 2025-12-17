@@ -24,6 +24,13 @@ model Project {
 
   members ProjectMember[]
 
+  wbsNodes       WbsNode[]
+  wbsAssignments ElementWbsAssignment[]
+  paramDefs      ElementParamDefinition[]
+  paramValues    ElementParamValue[]
+  paramHistory   ElementParamHistory[]
+  suppliers      Supplier[]
+
   archivedAt DateTime?
 
   @@index([code])
@@ -77,14 +84,16 @@ model ElementDatiWbs {
 }
 
 model User {
-  id           String    @id @default(uuid())
-  email        String    @unique
+  id           String   @id @default(uuid())
+  email        String   @unique
   passwordHash String
   name         String?
-  createdAt    DateTime  @default(now())
+  createdAt    DateTime @default(now())
 
-  sessions     Session[]
-  memberships  ProjectMember[]
+  sessions    Session[]
+  memberships ProjectMember[]
+
+  elementParamHistory ElementParamHistory[]
 
   platformRole PlatformRole @default(USER)
 }
@@ -124,8 +133,145 @@ enum ProjectRole {
   VIEWER
 }
 
+enum ElementParamType {
+  STRING
+  NUMBER
+  BOOLEAN
+  ENUM
+  DATE
+  JSON
+  SUPPLIER
+}
 
+model WbsNode {
+  id        String  @id @default(cuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
+  code      String
+  name      String
+  sortIndex Int    @default(0)
 
+  parentId String?
+  parent   WbsNode?  @relation("WbsTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children WbsNode[] @relation("WbsTree")
 
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
+  assignments ElementWbsAssignment[]
+  history     ElementParamHistory[]
+
+  @@unique([projectId, code])
+  @@index([projectId, parentId])
+}
+
+model ElementWbsAssignment {
+  id        String  @id @default(cuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  ifcGlobalId String
+
+  wbsNodeId String
+  wbsNode   WbsNode @relation(fields: [wbsNodeId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([projectId, ifcGlobalId])
+  @@index([projectId, wbsNodeId])
+}
+
+model ElementParamDefinition {
+  id        String  @id @default(cuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  key   String
+  label String
+  type  ElementParamType
+
+  optionsJson Json?
+  isActive    Boolean @default(true)
+  isRequired  Boolean @default(false)
+  isReadOnly  Boolean @default(false)
+  isMulti     Boolean @default(false)
+
+  // opzionale: filtro per classe IFC (es: "IfcWall,IfcSlab")
+  ifcClassFilter String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  values ElementParamValue[]
+
+  history ElementParamHistory[]
+
+  @@unique([projectId, key])
+  @@index([projectId, isActive])
+}
+
+model ElementParamValue {
+  id        String  @id @default(cuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  ifcGlobalId String
+
+  definitionId String
+  definition   ElementParamDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+
+  valueJson Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([projectId, ifcGlobalId, definitionId])
+  @@index([projectId, definitionId])
+}
+
+model ElementParamHistory {
+  id        String  @id @default(cuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  ifcGlobalId String
+
+  // "WBS" oppure "PARAM"
+  kind String
+
+  definitionId String?
+  definition   ElementParamDefinition? @relation(fields: [definitionId], references: [id], onDelete: SetNull)
+
+  wbsNodeId String?
+  wbsNode   WbsNode? @relation(fields: [wbsNodeId], references: [id], onDelete: SetNull)
+
+  oldValueJson Json?
+  newValueJson Json?
+
+  changedByUserId String
+  changedBy       User   @relation(fields: [changedByUserId], references: [id], onDelete: Restrict)
+
+  source    String   @default("UI")
+  changedAt DateTime @default(now())
+
+  @@index([projectId, ifcGlobalId, changedAt])
+  @@index([projectId, kind, changedAt])
+}
+
+model Supplier {
+  id        String  @id @default(cuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  name     String
+  code     String?
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([projectId, name])
+  @@index([projectId, isActive])
+}

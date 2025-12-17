@@ -2,8 +2,9 @@ import React, { useEffect, useMemo, useState } from "react";
 import { DatiWbsProfileSettingsPanel } from "./DatiWbsProfileSettingsPanel";
 import { useProjects } from "@core/projects/ProjectContext";
 import type { AederaProject } from "@core/projects/projectTypes";
+import { FornitoriSettingsPanel } from "./FornitoriSettingsPanel";
 
-type SettingsTab = "wbs" | "archived";
+type SettingsTab = "wbs" | "suppliers" | "archived";
 
 export const ImpostazioniView: React.FC = () => {
   const [tab, setTab] = useState<SettingsTab>("wbs");
@@ -39,6 +40,18 @@ export const ImpostazioniView: React.FC = () => {
           <button
             className={[
               "mt-1 w-full text-left px-3 py-2 rounded-md text-xs",
+              tab === "suppliers"
+                ? "bg-sky-50 text-sky-700 border border-sky-200"
+                : "hover:bg-slate-50",
+            ].join(" ")}
+            onClick={() => setTab("suppliers")}
+          >
+            Fornitori
+          </button>
+
+          <button
+            className={[
+              "mt-1 w-full text-left px-3 py-2 rounded-md text-xs",
               tab === "archived"
                 ? "bg-sky-50 text-sky-700 border border-sky-200"
                 : "hover:bg-slate-50",
@@ -62,6 +75,12 @@ export const ImpostazioniView: React.FC = () => {
               <DatiWbsProfileSettingsPanel />
             </div>
           ) : null}
+
+          {tab === "suppliers" && (
+            <div className="h-full min-h-0">
+              <FornitoriSettingsPanel />
+            </div>
+          )}
 
           {tab === "archived" ? <ArchivedProjectsPanel /> : null}
         </section>

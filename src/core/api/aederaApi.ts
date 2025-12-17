@@ -86,6 +86,7 @@ export async function upsertElementDatiWbs(
       `${API_BASE}/api/projects/${encodeURIComponent(projectId)}/elements/${encodeURIComponent(globalId)}/dati-wbs`,
       {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       },
@@ -118,6 +119,7 @@ export async function bulkGetDatiWbs(
         `${API_BASE}/api/projects/${encodeURIComponent(projectId)}/dati-wbs/bulk-get`,
         {
           method: "POST",
+          credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ globalIds: chunk }),
         },
@@ -237,3 +239,95 @@ export async function deleteProjectModel(projectId: string, modelId: string) {
   return res.json();
 }
 
+
+
+
+export type SupplierDto = {
+  id: string;
+  name: string;
+  code: string | null;
+  isActive: boolean;
+};
+
+export async function listSuppliers(projectId: string) {
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/suppliers`, {
+    method: "GET",
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(`listSuppliers failed: ${res.status}`);
+  return res.json() as Promise<SupplierDto[]>;
+}
+
+export async function createSupplier(projectId: string, payload: { name: string; code?: string }) {
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/suppliers`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(`createSupplier failed: ${res.status}`);
+  return res.json() as Promise<SupplierDto>;
+}
+
+export async function updateSupplier(
+  projectId: string,
+  supplierId: string,
+  payload: { name?: string; code?: string | null; isActive?: boolean },
+) {
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/suppliers/${supplierId}`, {
+    method: "PATCH",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(`updateSupplier failed: ${res.status}`);
+  return res.json() as Promise<SupplierDto>;
+}
+
+
+
+
+export type ElementParamDefinitionDto = {
+  id: string;
+  key: string;
+  label: string;
+  type: string;
+  isMulti: boolean;
+  isRequired: boolean;
+  isReadOnly: boolean;
+};
+
+export type BulkGetElementParamsResponse = {
+  definitions: ElementParamDefinitionDto[];
+  values: Record<string, Record<string, any>>; // values[globalId][key] = valueJson
+};
+
+export async function bulkGetElementParams(
+  projectId: string,
+  payload: { globalIds: string[]; keys?: string[] },
+) {
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/params/values/bulk-get`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(`bulkGetElementParams failed: ${res.status}`);
+  return res.json() as Promise<BulkGetElementParamsResponse>;
+}
+
+export async function setElementParamValue(
+  projectId: string,
+  globalId: string,
+  key: string,
+  value: any,
+) {
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/params/elements/${globalId}/${key}`, {
+    method: "PUT",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ value }),
+  });
+  if (!res.ok) throw new Error(`setElementParamValue failed: ${res.status}`);
+  return res.json();
+}
