@@ -2,39 +2,58 @@
 
 import * as OBC from "@thatopen/components";
 import { getAederaViewer } from "@core/bim/thatopen";
+import { upsertIfcModel } from "./modelRegistry";
+import { setBimMappingForModel, type BimMappingRow } from "@core/bim/bimMappingStore";
+import { getAllElements } from "@core/bim/modelProperties";
 import {
   extractPropertiesForModel,
   listIfcTypes,
   listPsetNames,
   listPsetPropertyNames,
-  getAllElements,
-  setDatiWbsProps,
-  type DatiWbsProps,
 } from "@core/bim/modelProperties";
-import { bulkGetDatiWbs, requireProjectId } from "@core/api/aederaApi";
-import { upsertIfcModel } from "./modelRegistry";
+import {
+  bulkGetElementParams,
+  bulkGetWbsAssignments,
+  requireProjectId,
+  indexElementsForModel,
+} from "@core/api/aederaApi";
 
-/**
- * Carica un file IFC selezionato dall'utente e lo converte in Fragments.
- * Il modello Fragments verrà aggiunto alla scena dal FragmentsManager
- * (configurato in thatopen.ts) e le sue proprietà verranno analizzate.
- */
-export async function loadIfcFromFile(file: File): Promise<string> {
-  const ctx = getAederaViewer();
-  if (!ctx) {
-    throw new Error("[IFC Loader] Viewer non inizializzato");
+
+function buildIndexElementsPayload(modelId: string) {
+  const els = getAllElements(modelId) ?? [];
+
+  const elements = [];
+
+  for (const el of els) {
+    const guid = el.globalId;
+    if (!guid) continue;
+
+    elements.push({
+      guid,
+      ifcType: el.ifcType ?? "UNKNOWN",
+      name: el.name ?? null,
+      typeName: el.typeName ?? null,
+      category: el.category ?? null,
+    });
   }
 
-  const { components } = ctx;
+  return { elements };
+}
 
+
+export async function loadIfcFromFile(
+  file: File,
+  opts?: { projectId?: string; ifcModelId?: string; indexElements?: boolean }
+): Promise<string> {
+  const ctx = getAederaViewer();
+  if (!ctx) throw new Error("[IFC Loader] Viewer non inizializzato");
+
+  const { components } = ctx;
   const ifcLoader = components.get(OBC.IfcLoader);
 
   await ifcLoader.setup({
     autoSetWasm: false,
-    wasm: {
-      path: "https://unpkg.com/web-ifc@0.0.72/",
-      absolute: true,
-    },
+    wasm: { path: "https://unpkg.com/web-ifc@0.0.72/", absolute: true },
   });
 
   const buffer = await file.arrayBuffer();
@@ -43,83 +62,40 @@ export async function loadIfcFromFile(file: File): Promise<string> {
   console.time("[IFC Loader] load");
   const model = await ifcLoader.load(typedArray, true, file.name, {
     processData: {
-      progressCallback: (progress) => {
-        console.log("[IFC Loader] progress:", progress);
-      },
+      progressCallback: (progress) => console.log("[IFC Loader] progress:", progress),
     },
   });
   console.timeEnd("[IFC Loader] load");
 
-  // 🔹 Estrazione proprietà e indicizzazione
+  // Indicizza proprietà
   try {
     await extractPropertiesForModel(model);
   } catch (error) {
-    console.warn(
-      "[IFC Loader] Errore durante extractPropertiesForModel:",
-      error,
-    );
+    console.warn("[IFC Loader] Errore durante extractPropertiesForModel:", error);
   }
 
-  // 🔁 Ripristino DATI_WBS persistiti su DB (per projectId)
+  const modelId = model.modelId;
+
+  // STEP 1: indicizzazione ELEMENTI (minima) su server
   try {
-    const modelId = model.modelId;
-    const elements = getAllElements(modelId) ?? [];
+    const projectId = opts?.projectId ?? requireProjectId();
+    const ifcModelId = opts?.ifcModelId;
 
-    const globalToLocal = new Map<string, number>();
-    for (const el of elements) {
-      if (el.globalId) globalToLocal.set(el.globalId, el.localId);
+    if (opts?.indexElements !== false && ifcModelId) {
+      const payload = buildIndexElementsPayload(modelId);
+      await indexElementsForModel(projectId, ifcModelId, payload);
+
+      console.log("[IFC Loader] Elements indicizzati su server:", {
+        projectId,
+        ifcModelId,
+        elements: payload.elements.length,
+      });
     }
-
-    const projectId = requireProjectId();
-
-    const elementIds = elements
-      .map((e) => e.globalId)
-      .filter((v): v is string => !!v);
-
-    const rows = await bulkGetDatiWbs(projectId, elementIds);
-
-    // rows: [{ ifcGlobalId, wbs0..wbs10, tariffaCodice, pacchettoCodice, ...}]
-    for (const row of rows) {
-      const gid = row.ifcGlobalId as string | undefined;
-      if (!gid) continue;
-      const localId = globalToLocal.get(gid);
-      if (localId == null) continue;
-
-      const patch: Partial<DatiWbsProps> = {};
-
-      for (let i = 0; i <= 10; i++) {
-        const k = `wbs${i}`;
-        if (k in row) {
-          const v = row[k];
-          (patch as any)[`WBS${i}`] = v == null ? null : String(v);
-        }
-      }
-
-      if ("tariffaCodice" in row) {
-        const v = row.tariffaCodice;
-        patch.TariffaCodice = v == null ? null : String(v);
-      }
-
-      if ("pacchettoCodice" in row) {
-        const v = row.pacchettoCodice;
-        patch.PacchettoCodice = v == null ? null : String(v);
-      }
-
-      // Applica nel PropertyEngine (non rilanciamo writeDatiWbs per evitare loop di persistenza)
-      setDatiWbsProps(modelId, localId, patch);
-    }
-
-    console.log("[IFC Loader] Ripristino DATI_WBS da DB completato", {
-      modelId,
-      restored: rows.length,
-    });
-  } catch (error) {
-    console.warn("[IFC Loader] Ripristino DATI_WBS da DB fallito:", error);
+  } catch (err) {
+    console.warn("[IFC Loader] index-elements fallito:", err);
   }
 
-    const modelId = model.modelId;
-
-  // 🔎 Debug + registrazione nel Model Registry (non deve bloccare il return)
+  // Debug + registry
   try {
     const ifcTypes = listIfcTypes(modelId);
     const psetNames = listPsetNames(modelId);
@@ -138,38 +114,68 @@ export async function loadIfcFromFile(file: File): Promise<string> {
 
     for (const psetName of psetNames.slice(0, 3)) {
       const propNames = listPsetPropertyNames(modelId, psetName);
-      console.log("[PropertyEngine] Pset dettaglio:", {
-        modelId,
-        psetName,
-        properties: propNames,
-      });
+      console.log("[PropertyEngine] Pset dettaglio:", { modelId, psetName, properties: propNames });
     }
 
-    // ✅ registra/aggiorna il modello nel registry (nome file + numero elementi)
     upsertIfcModel(modelId, file.name);
+
+    // 🔁 Restore mapping server-based (WBS + ElementParams)
+    try {
+      const projectId = opts?.projectId ?? requireProjectId();
+      const ifcModelId = opts?.ifcModelId;
+
+      if (!ifcModelId) throw new Error("Missing ifcModelId (server model id) for restore mapping");
+
+      const elements = getAllElements(modelId) ?? [];
+      const guids = elements.map((e) => e.globalId).filter((v): v is string => !!v);
+
+      const [wbsResp, paramsResp] = await Promise.all([
+        bulkGetWbsAssignments(projectId, { modelId: ifcModelId, guids }),
+        bulkGetElementParams(projectId, {
+          modelId: ifcModelId,
+          guids,
+          keys: ["tariffaCodice", "pacchettoCodice", "codiceMateriale", "fornitoreId"],
+        } as any),
+      ]);
+
+      const wbsMap =
+        (wbsResp as any).assignmentByGuid ??
+        (wbsResp as any).assignmentByGlobalId ??
+        {};
+
+      const rows: BimMappingRow[] = guids.map((gid) => {
+        const v = (paramsResp as any).values?.[gid] ?? {};
+        return {
+          globalId: gid,
+          wbsNodeId: wbsMap[gid] ?? null,
+          tariffaCodice: v["tariffaCodice"] ?? null,
+          pacchettoCodice: v["pacchettoCodice"] ?? null,
+          codiceMateriale: v["codiceMateriale"] ?? null,
+          fornitoreId: v["fornitoreId"] ?? null,
+        };
+      });
+
+      setBimMappingForModel(modelId, projectId, rows);
+    } catch (err) {
+      console.warn("[IFC Loader] Restore BIM mapping fallito:", err);
+    }
   } catch (error) {
-    console.warn(
-      "[IFC Loader] Errore durante il riepilogo PropertyEngine / ModelRegistry:",
-      error,
-    );
+    console.warn("[IFC Loader] Errore riepilogo PropertyEngine / ModelRegistry:", error);
   }
 
-  // ✅ ritorna SEMPRE il modelId
   return modelId;
 }
 
 
-
-export async function loadIfcFromUrl(url: string, label?: string): Promise<string> {
+export async function loadIfcFromUrl(
+  url: string,
+  label?: string,
+  opts?: { projectId?: string; ifcModelId?: string; indexElements?: boolean },
+): Promise<string> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Failed to fetch IFC: ${res.status}`);
   const buf = await res.arrayBuffer();
-
   const fileName = label ?? url.split("/").pop() ?? "model.ifc";
   const file = new File([buf], fileName, { type: "application/octet-stream" });
-
-  // loadIfcFromFile nel tuo progetto ritorna il modelId (string)
-  // Se non lo fa, dimmelo e lo sistemiamo lì, ma è la soluzione corretta.
-  const modelId = await loadIfcFromFile(file);
-  return modelId;
+  return loadIfcFromFile(file, opts);
 }

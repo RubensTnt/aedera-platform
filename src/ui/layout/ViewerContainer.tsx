@@ -4,7 +4,7 @@ import { clearModelsRegistry } from "@core/bim/modelRegistry";
 import { listProjectModels, API_BASE } from "@core/api/aederaApi";
 import { loadIfcFromUrl } from "@core/bim/ifcLoader";
 import { useProjects } from "@core/projects/ProjectContext";
-import { DatiWbsSelectionOverlay } from "@ui/overlays/DatiWbsSelectionOverlay";
+import { BimMappingSelectionOverlay } from "@ui/overlays/BimMappingSelectionOverlay";
 import { setServerIdForModel } from "@core/bim/modelRegistry";
 
 interface ViewerContainerProps {
@@ -35,7 +35,10 @@ export const ViewerContainer: React.FC<ViewerContainerProps> = ({
     const models = await listProjectModels(currentProjectId);
     for (const m of models) {
       if (cancelled) return;
-      const modelId = await loadIfcFromUrl(`${API_BASE}${m.url}`, m.label);
+      const modelId = await loadIfcFromUrl(`${API_BASE}${m.url}`, m.label, {
+        projectId: currentProjectId,
+        ifcModelId: m.id,
+      });
       setServerIdForModel(modelId, m.id);
     }
   })().catch((err) => {
@@ -54,7 +57,7 @@ export const ViewerContainer: React.FC<ViewerContainerProps> = ({
 
   return (
     <div key={currentProjectId ?? "no-project"} ref={containerRef} className="relative h-full w-full">
-      {showDatiWbsOverlay ? <DatiWbsSelectionOverlay /> : null}
+      {showDatiWbsOverlay ? <BimMappingSelectionOverlay /> : null}
     </div>
   );
 };

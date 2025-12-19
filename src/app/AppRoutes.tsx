@@ -8,7 +8,7 @@ import { GareView } from "@modules/gare/GareView";
 import { ContabilitaView } from "@modules/contabilita/ContabilitaView";
 import { ProgrammazioneView } from "@modules/programmazione/ProgrammazioneView";
 import { DirezioneTecnicaView } from "@modules/direzioneTecnica/DirezioneTecnicaView";
-import { WbsTariffaView } from "@modules/parametriBim/WbsTariffaView";
+import { BimMappingImportView } from "@modules/parametriBim/BimMappingImportView";
 import { ModelliView } from "@modules/modelli/ModelliView";
 import { ReportView } from "@modules/report/ReportView";
 import { ImpostazioniView } from "@modules/impostazioni/ImpostazioniView";
@@ -57,7 +57,7 @@ export const AppRoutes: React.FC = () => {
                   <Route path="/" element={<Navigate to="/progettazione" replace />} />
                   <Route path="/modelli" element={<ModelliView />} />
                   <Route path="/progettazione" element={<ProgettazioneView />} />
-                  <Route path="/parametri-bim" element={<WbsTariffaView />} />
+                  <Route path="/parametri-bim" element={<BimMappingImportView />} />
                   <Route path="/gare" element={<GareView />} />
                   <Route path="/contabilita" element={<ContabilitaView />} />
                   <Route path="/programmazione" element={<ProgrammazioneView />} />

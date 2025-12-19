@@ -26,17 +26,13 @@ export interface PsetsMap {
  * Record di proprietà normalizzate per un singolo elemento IFC.
  */
 export interface ElementRecord {
-  /** localId interno del FragmentsModel */
   localId: number;
-  /** GUID IFC, se disponibile */
   globalId?: string;
-  /** Tipo IFC (es. IFCWALLSTANDARDCASE) se riusciamo a leggerlo */
   ifcType?: string;
-  /** Nome logico dell’elemento (Name IFC) */
   name?: string;
-  /** Tutti i Pset estratti via IsDefinedBy */
+  typeName?: string;
+  category?: string;
   psets: PsetsMap;
-  /** Raw data completo di ThatOpen, per debug / future elaborazioni */
   raw: any;
 }
 
@@ -139,6 +135,15 @@ export async function extractPropertiesForModel(
         ? ((getAttrValue(dataAttrs, "Name") ??
             getAttrValue(dataAttrs, "LongName")) as string | undefined)
         : undefined);
+
+    const typeName =
+      (getAttrValue(item, "ObjectType") as string | undefined) ??
+      (getAttrValue(attributes, "ObjectType") as string | undefined) ??
+      (dataAttrs ? (getAttrValue(dataAttrs, "ObjectType") as string | undefined) : undefined) ??
+      (getAttrValue(item, "PredefinedType") as string | undefined) ??
+      (getAttrValue(attributes, "PredefinedType") as string | undefined) ??
+      (dataAttrs ? (getAttrValue(dataAttrs, "PredefinedType") as string | undefined) : undefined) ??
+      undefined;
 
     // --- TIPO / CATEGORIA IFC ---------------------------------------
     // 1) SchemaName (es. IFCWALLSTANDARDCASE)
@@ -283,6 +288,8 @@ export async function extractPropertiesForModel(
       globalId: guid ?? undefined,
       ifcType,
       name,
+      typeName,
+      category: categoryString ?? undefined,
       psets,
       raw: item,
     };

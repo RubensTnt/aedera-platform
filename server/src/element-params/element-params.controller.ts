@@ -20,8 +20,6 @@ import { ElementParamsService } from "./element-params.service";
 export class ElementParamsController {
   constructor(private readonly service: ElementParamsService) {}
 
-  // --------- DEFINITIONS (ADMIN+) ---------
-
   @Get("definitions")
   @UseGuards(ProjectRoleGuard)
   @ProjectRoles("ADMIN", "OWNER")
@@ -73,31 +71,71 @@ export class ElementParamsController {
     return this.service.updateDefinition(projectId, id, body as any);
   }
 
-  // --------- VALUES (VIEWER+ / EDITOR+) ---------
-
+  
+  // ✅ IMPORTANT: modelId sempre richiesto
   @Post("values/bulk-get")
   @UseGuards(ProjectRoleGuard)
   @ProjectRoles("VIEWER", "EDITOR", "ADMIN", "OWNER")
   bulkGetValues(
     @Param("projectId") projectId: string,
-    @Body() body: { globalIds?: string[]; keys?: string[] },
+    @Body() body: { modelId: string; guids?: string[]; keys?: string[] },
   ) {
-    return this.service.bulkGetValues(projectId, body.globalIds ?? [], body.keys);
+    const modelId = String(body?.modelId ?? "").trim();
+    if (!modelId) throw new BadRequestException("Missing modelId");
+
+    const guids = body?.guids ?? [];
+    if (!Array.isArray(guids)) throw new BadRequestException("guids must be an array");
+
+    return this.service.bulkGetValues(projectId, modelId, guids, body.keys);
   }
 
-  @Put("elements/:globalId/:key")
+
+  @Post("values/bulk-set")
+  @UseGuards(ProjectRoleGuard)
+  @ProjectRoles("EDITOR", "ADMIN", "OWNER")
+  bulkSetValues(
+    @Param("projectId") projectId: string,
+    @Body()
+    body: {
+      modelId: string;
+      items: { guid: string; key: string; value: any }[];
+      source?: string;
+    },
+    @Req() req: any,
+  ) {
+    const modelId = String(body?.modelId ?? "").trim();
+    if (!modelId) throw new BadRequestException("Missing modelId");
+
+    const items = body?.items ?? [];
+    if (!Array.isArray(items)) throw new BadRequestException("items must be an array");
+
+    return this.service.bulkSetValues({
+      projectId,
+      modelId,
+      items,
+      source: body?.source ?? "UI",
+      changedByUserId: req.user?.id,
+    });
+  }
+
+  @Put("elements/:modelId/:guid/:key")
   @UseGuards(ProjectRoleGuard)
   @ProjectRoles("EDITOR", "ADMIN", "OWNER")
   setValue(
     @Param("projectId") projectId: string,
-    @Param("globalId") globalId: string,
+    @Param("modelId") modelId: string,
+    @Param("guid") guid: string,
     @Param("key") key: string,
     @Body() body: { value: any; source?: string },
     @Req() req: any,
   ) {
+    if (!modelId) throw new BadRequestException("Missing modelId");
+    if (!guid) throw new BadRequestException("Missing guid");
+
     return this.service.setValue({
       projectId,
-      globalId,
+      modelId,
+      guid,
       key,
       value: body?.value,
       source: body?.source ?? "UI",
@@ -105,15 +143,17 @@ export class ElementParamsController {
     });
   }
 
-  // --------- HISTORY (VIEWER+) ---------
 
-  @Get("elements/:globalId/history")
+  @Get("elements/:modelId/:guid/history")
   @UseGuards(ProjectRoleGuard)
   @ProjectRoles("VIEWER", "EDITOR", "ADMIN", "OWNER")
   history(
     @Param("projectId") projectId: string,
-    @Param("globalId") globalId: string,
+    @Param("modelId") modelId: string,
+    @Param("guid") guid: string,
   ) {
-    return this.service.getElementHistory(projectId, globalId);
+    if (!modelId) throw new BadRequestException("Missing modelId");
+    if (!guid) throw new BadRequestException("Missing guid");
+    return this.service.getElementHistory(projectId, modelId, guid);
   }
 }

@@ -1,18 +1,13 @@
 // src/core/api/aederaApi.ts
 
-import type { DatiWbsProps } from "../bim/modelProperties";
 import { getCurrentProjectId } from "../projects/projectStore";
 import type { AederaProject } from "../projects/projectTypes";
 
-// Per ora: server locale
 export const API_BASE = "http://localhost:4000";
 
-// === DEPRECATO ===
-/* export function getProjectId(): string {
-  // zero-UI: projectId persistente ma semplice
-  return localStorage.getItem("aedera:projectId") ?? "aedera-demo";
-} */
-
+// ----------------------
+// Auth
+// ----------------------
 export async function login(email: string, password: string, remember: boolean) {
   const res = await fetch(`${API_BASE}/api/auth/login`, {
     method: "POST",
@@ -39,111 +34,15 @@ export async function getMe() {
   return res.json();
 }
 
-// === NUOVO - prendiamo il Progetto dallo store ===
 export function requireProjectId(): string {
   const pid = getCurrentProjectId();
   if (!pid) throw new Error("No current project selected");
   return pid;
 }
 
-function toDbPatch(patch: Partial<DatiWbsProps>): Record<string, string | null> {
-  const out: Record<string, string | null> = {};
-
-  for (let i = 0; i <= 10; i++) {
-    const k = `WBS${i}` as keyof DatiWbsProps;
-    if (k in patch) {
-      const v = patch[k];
-      // null = rimozione esplicita, string = valore
-      out[`wbs${i}`] = v == null ? null : String(v);
-    }
-  }
-
-  if ("TariffaCodice" in patch) {
-    const v = patch.TariffaCodice;
-    out.tariffaCodice = v == null ? null : String(v);
-  }
-
-  if ("PacchettoCodice" in patch) {
-    const v = patch.PacchettoCodice;
-    out.pacchettoCodice = v == null ? null : String(v);
-  }
-
-  return out;
-}
-
-export async function upsertElementDatiWbs(
-  projectId: string,
-  globalId: string,
-  patch: Partial<DatiWbsProps>,
-): Promise<void> {
-  const body = toDbPatch(patch);
-
-  // se patch vuota non fare chiamate inutili
-  if (!Object.keys(body).length) return;
-
-  try {
-    await fetch(
-      `${API_BASE}/api/projects/${encodeURIComponent(projectId)}/elements/${encodeURIComponent(globalId)}/dati-wbs`,
-      {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      },
-    );
-  } catch (err) {
-    // non blocchiamo la UI; log per debug
-    console.warn("[DB] upsertElementDatiWbs failed", { projectId, globalId, err });
-  }
-}
-
-export async function bulkGetDatiWbs(
-  projectId: string,
-  globalIds: string[],
-): Promise<any[]> {
-  if (!globalIds.length) return [];
-
-  // ✅ chunk per evitare request troppo grandi
-  const CHUNK_SIZE = 500;
-
-  const chunks: string[][] = [];
-  for (let i = 0; i < globalIds.length; i += CHUNK_SIZE) {
-    chunks.push(globalIds.slice(i, i + CHUNK_SIZE));
-  }
-
-  const allRows: any[] = [];
-
-  for (const chunk of chunks) {
-    try {
-      const res = await fetch(
-        `${API_BASE}/api/projects/${encodeURIComponent(projectId)}/dati-wbs/bulk-get`,
-        {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ globalIds: chunk }),
-        },
-      );
-
-      if (!res.ok) {
-        console.warn("[DB] bulkGetDatiWbs chunk failed", {
-          projectId,
-          status: res.status,
-          count: chunk.length,
-        });
-        continue;
-      }
-
-      const rows = await res.json();
-      if (Array.isArray(rows)) allRows.push(...rows);
-    } catch (err) {
-      console.warn("[DB] bulkGetDatiWbs chunk error", { projectId, err });
-    }
-  }
-
-  return allRows;
-}
-
+// ----------------------
+// Projects
+// ----------------------
 export async function listProjects(archived?: "true" | "all"): Promise<AederaProject[]> {
   const qs = archived ? `?archived=${archived}` : "";
   const res = await fetch(`${API_BASE}/api/projects${qs}`, { credentials: "include" });
@@ -194,40 +93,37 @@ export async function restoreProject(id: string) {
   return res.json();
 }
 
-
-
-
-export type IfcModelDto = {
+// ----------------------
+// Models
+// ----------------------
+export type ProjectModelDto = {
   id: string;
-  projectId: string;
   label: string;
-  fileName: string;
-  fileKey: string;
-  size?: number;
-  createdAt: string;
-  url: string; // dal server (/storage/...)
+  url: string;
 };
 
-export async function listProjectModels(projectId: string): Promise<IfcModelDto[]> {
+export async function listProjectModels(projectId: string): Promise<ProjectModelDto[]> {
   const res = await fetch(`${API_BASE}/api/projects/${projectId}/models`, {
+    method: "GET",
     credentials: "include",
   });
   if (!res.ok) throw new Error(`listProjectModels failed: ${res.status}`);
   return res.json();
 }
 
-export async function uploadProjectModel(projectId: string, file: File, label?: string) {
-  const fd = new FormData();
-  fd.append("file", file);
-  if (label) fd.append("label", label);
+export async function uploadProjectModel(projectId: string, file: File, label: string) {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("label", label);
 
   const res = await fetch(`${API_BASE}/api/projects/${projectId}/models/upload`, {
     method: "POST",
-    body: fd,
     credentials: "include",
+    body: form,
   });
+
   if (!res.ok) throw new Error(`uploadProjectModel failed: ${res.status}`);
-  return res.json() as Promise<IfcModelDto>;
+  return res.json() as Promise<{ id: string; label: string; url: string }>;
 }
 
 export async function deleteProjectModel(projectId: string, modelId: string) {
@@ -235,13 +131,41 @@ export async function deleteProjectModel(projectId: string, modelId: string) {
     method: "DELETE",
     credentials: "include",
   });
+
   if (!res.ok) throw new Error(`deleteProjectModel failed: ${res.status}`);
   return res.json();
 }
 
 
+export type IndexElementsPayload = {
+  elements: Array<{
+    guid: string;
+    ifcType: string;
+    name?: string | null;
+    typeName?: string | null;
+    category?: string | null;
+  }>;
+};
+
+export async function indexElementsForModel(projectId: string, ifcModelId: string, payload: IndexElementsPayload) {
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/models/${ifcModelId}/index-elements`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(`indexElementsForModel failed: ${res.status} ${txt}`);
+  }
+  return res.json();
+}
 
 
+// ----------------------
+// Suppliers
+// ----------------------
 export type SupplierDto = {
   id: string;
   name: string;
@@ -284,9 +208,9 @@ export async function updateSupplier(
   return res.json() as Promise<SupplierDto>;
 }
 
-
-
-
+// ----------------------
+// Element Params
+// ----------------------
 export type ElementParamDefinitionDto = {
   id: string;
   key: string;
@@ -304,7 +228,7 @@ export type BulkGetElementParamsResponse = {
 
 export async function bulkGetElementParams(
   projectId: string,
-  payload: { globalIds: string[]; keys?: string[] },
+  payload: { modelId: string; guids: string[]; keys?: string[] },
 ) {
   const res = await fetch(`${API_BASE}/api/projects/${projectId}/params/values/bulk-get`, {
     method: "POST",
@@ -312,22 +236,224 @@ export async function bulkGetElementParams(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  if (!res.ok) throw new Error(`bulkGetElementParams failed: ${res.status}`);
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(`bulkGetElementParams failed: ${res.status} ${txt}`);
+  }
   return res.json() as Promise<BulkGetElementParamsResponse>;
 }
 
 export async function setElementParamValue(
   projectId: string,
-  globalId: string,
+  modelId: string,
+  guid: string,
   key: string,
   value: any,
 ) {
-  const res = await fetch(`${API_BASE}/api/projects/${projectId}/params/elements/${globalId}/${key}`, {
-    method: "PUT",
+  const res = await fetch(
+    `${API_BASE}/api/projects/${projectId}/params/elements/${modelId}/${guid}/${encodeURIComponent(key)}`,
+    {
+      method: "PUT",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ value }),
+    },
+  );
+
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(`setElementParamValue failed: ${res.status} ${txt}`);
+  }
+
+  return res.json();
+}
+
+export async function getElementParamHistory(projectId: string, modelId: string, guid: string) {
+  const res = await fetch(
+    `${API_BASE}/api/projects/${projectId}/params/elements/${modelId}/${guid}/history`,
+    { credentials: "include" },
+  );
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(`getElementParamHistory failed: ${res.status} ${txt}`);
+  }
+  return res.json();
+}
+
+
+// ----------------------
+// WBS (NEW)
+// ----------------------
+export type WbsNodeDto = {
+  id: string;
+  projectId: string;
+  code: string;        // es. "01", "010", ...
+  label: string | null;
+  parentId: string | null;
+  level: number;       // 0..n
+  path: string[];      // ["01","010",...]
+};
+
+export async function getWbsTree(projectId: string) {
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/wbs/tree`, {
+    method: "GET",
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(`getWbsTree failed: ${res.status}`);
+  return res.json() as Promise<WbsNodeDto[]>;
+}
+
+/**
+ * Crea (se mancano) tutti i nodi necessari per i path.
+ * path = ["01","010","A"] ecc.
+ * Ritorna una mappa key->nodeId dove key è path joinato con "/".
+ */
+// aederaApi.ts
+
+type EnsureWbsPathsResponse =
+  | { nodeIdByPathKey: Record<string, string> }
+  | { leaves: { key: string; wbsNodeId: string }[] };
+
+export async function ensureWbsPaths(
+  projectId: string,
+  payload: { paths: string[][] },
+): Promise<{ nodeIdByPathKey: Record<string, string> }> {
+
+  // ✅ Adatta il payload al contratto del server: [{ segments: [{code,name?}]}]
+  const body = {
+    paths: (payload.paths ?? [])
+      .filter((p) => Array.isArray(p) && p.length > 0)
+      .map((p) => ({
+        segments: p
+          .map((code) => String(code ?? "").trim())
+          .filter((code) => code.length > 0)
+          .map((code) => ({ code, name: code })), // name opzionale: per ora uguale a code
+      }))
+      .filter((p) => p.segments.length > 0),
+  };
+
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/wbs/ensure-paths`, {
+    method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ value }),
+    body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`setElementParamValue failed: ${res.status}`);
-  return res.json();
+
+  if (!res.ok) throw new Error(`ensureWbsPaths failed: ${res.status}`);
+
+  const data = (await res.json()) as EnsureWbsPathsResponse;
+
+  // ✅ Normalizza la response in nodeIdByPathKey per i chiamanti UI
+  if ("nodeIdByPathKey" in data && data.nodeIdByPathKey) {
+    return { nodeIdByPathKey: data.nodeIdByPathKey };
+  }
+
+  if ("leaves" in data && Array.isArray(data.leaves)) {
+    const nodeIdByPathKey: Record<string, string> = {};
+    for (const leaf of data.leaves) {
+      if (leaf?.key && leaf?.wbsNodeId) nodeIdByPathKey[leaf.key] = leaf.wbsNodeId;
+    }
+    return { nodeIdByPathKey };
+  }
+
+  throw new Error("ensureWbsPaths: unexpected response shape");
+}
+
+
+export async function bulkGetWbsAssignments(
+  projectId: string,
+  payload: { modelId: string; guids: string[] },
+) {
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/wbs/assignments/bulk-get`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(`bulkGetWbsAssignments failed: ${res.status} ${txt}`);
+  }
+
+  const raw = await res.json();
+
+  // se il server già ritorna array [{guid,wbsNodeId,...}]
+  if (Array.isArray(raw)) {
+    const map: Record<string, string | null> = {};
+    for (const it of raw) {
+      if (typeof it?.guid === "string") map[it.guid] = it?.wbsNodeId ?? null;
+    }
+    return { assignmentByGuid: map };
+  }
+
+  // eventuale shape alternativa { items: [...] }
+  if (Array.isArray(raw?.items)) {
+    const map: Record<string, string | null> = {};
+    for (const it of raw.items) {
+      if (typeof it?.guid === "string") map[it.guid] = it?.wbsNodeId ?? null;
+    }
+    return { assignmentByGuid: map };
+  }
+
+  // eventuale shape { assignmentByGuid: {...} }
+  if (raw?.assignmentByGuid && typeof raw.assignmentByGuid === "object") {
+    return { assignmentByGuid: raw.assignmentByGuid };
+  }
+
+  throw new Error("bulkGetWbsAssignments: unexpected response shape");
+}
+
+
+export async function bulkSetWbsAssignments(projectId: string, payload: { modelId: string; items: Array<{ guid: string; wbsNodeId: string | null }> }) {
+  const items = payload.items ?? [];
+  if (!items.length) return { updated: 0 };
+
+  const CHUNK = 500; // 200..1000 ok, 500 è un buon equilibrio
+  let updated = 0;
+
+  for (let i = 0; i < items.length; i += CHUNK) {
+    const chunk = items.slice(i, i + CHUNK);
+
+    const res = await fetch(
+      `${API_BASE}/api/projects/${projectId}/wbs/assignments/bulk-set`,
+      {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ modelId: payload.modelId, items: chunk, source: "IFC_IMPORT" }),
+      },
+    );
+
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      throw new Error(`bulkSetWbsAssignments failed: ${res.status} ${txt}`);
+    }
+
+    // se il server non ritorna contatori, ignora e continua
+    updated += chunk.length;
+  }
+
+  return { updated };
+}
+
+// ----------------------
+// Scenarios (NEW, MIN)
+// ----------------------
+export type EconomicScenarioDto = {
+  id: string;
+  projectId: string;
+  type: "GARA" | "OPERATIVO" | "COSTI" | "FORECAST";
+  name: string;
+  version: number;
+  createdAt: string;
+};
+
+export async function listScenarios(projectId: string) {
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/scenarios`, {
+    method: "GET",
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(`listScenarios failed: ${res.status}`);
+  return res.json() as Promise<EconomicScenarioDto[]>;
 }

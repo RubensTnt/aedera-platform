@@ -41,6 +41,7 @@ export class ModelsController {
     }));
   }
 
+  
   @Post("upload")
   @UseGuards(ProjectRoleGuard)
   @ProjectRoles("EDITOR", "ADMIN", "OWNER")
@@ -89,6 +90,27 @@ export class ModelsController {
     };
   }
 
+  
+  @Post(':modelId/index-elements')
+  @UseGuards(ProjectRoleGuard)
+  @ProjectRoles('EDITOR', 'ADMIN', 'OWNER')
+  async indexElements(
+    @Param('projectId') projectId: string,
+    @Param('modelId') modelId: string,
+    @Body() body: {
+      elements: Array<{
+        guid: string;
+        ifcType: string;
+        name?: string | null;
+        typeName?: string | null;
+        category?: string | null;
+      }>;
+    },
+  ) {
+    return this.models.indexElements(projectId, modelId, body);
+  }
+
+
   @Delete(":modelId")
   @UseGuards(ProjectRoleGuard)
   @ProjectRoles("EDITOR", "ADMIN", "OWNER")
@@ -106,4 +128,5 @@ export class ModelsController {
 
     return removed;
   }
+
 }

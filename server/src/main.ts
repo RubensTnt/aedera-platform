@@ -12,12 +12,14 @@ async function bootstrap() {
   app.use(cookieParser());
   
   // ✅ Aumenta limite body JSON (bulk-get può essere grande)
-  app.use(json({ limit: "5mb" }));
-  app.use(urlencoded({ extended: true, limit: "5mb" }));
+  app.use(json({ limit: '50mb' }));
+  app.use(urlencoded({ extended: true, limit: '50mb' }));
 
   app.enableCors({
-    origin: true,
+    origin: ['http://localhost:5173', 'http://127.0.0.1:5173'],
     credentials: true,
+    methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
   });
 
   // ✅ Serve i file caricati (IFC) dal filesystem locale

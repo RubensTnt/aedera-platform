@@ -19,7 +19,6 @@ import {
   setDatiWbsProps,
   getElementRecord,
 } from "./modelProperties";
-import { requireProjectId, upsertElementDatiWbs } from "../api/aederaApi";
 
 
 /**
@@ -46,12 +45,6 @@ export function writeDatiWbs(
 ) {
   const updated = setDatiWbsProps(modelId, localId, patch);
 
-  const record = getElementRecord(modelId, localId);
-  const globalId = record?.globalId;
-  if (globalId) {
-    const projectId = requireProjectId();
-    void upsertElementDatiWbs(projectId, globalId, patch);
-  }
 
   return updated;
 }

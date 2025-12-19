@@ -84,7 +84,10 @@ export const ModelliView: React.FC = () => {
         if (!currentProjectId) throw new Error("Nessun progetto selezionato");
 
         const dto = await uploadProjectModel(currentProjectId, file, file.name);
-        const modelId = await loadIfcFromUrl(`${API_BASE}${dto.url}`, dto.label);
+        const modelId = await loadIfcFromUrl(`${API_BASE}${dto.url}`, dto.label, {
+          projectId: currentProjectId,
+          ifcModelId: dto.id,
+        });
         setServerIdForModel(modelId, dto.id);
       } catch (e) {
         console.error(e);

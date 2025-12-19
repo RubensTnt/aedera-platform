@@ -1,8 +1,5 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+// Prisma schema — Aedera "clean": elements index + classifications + QTO
+// No IFC raw properties persisted.
 
 generator client {
   provider = "prisma-client-js"
@@ -12,75 +9,36 @@ datasource db {
   provider = "postgresql"
 }
 
+//
+// --------------------
+// Core: Project & Auth
+// --------------------
+//
+
 model Project {
-  id        String   @id @default(cuid())
-  name      String
-  code      String?  @unique
-  createdAt DateTime @default(now())
-
-  datiWbs ElementDatiWbs[]
-
-  ifcModels IfcModel[]
-
-  members ProjectMember[]
-
-  wbsNodes       WbsNode[]
-  wbsAssignments ElementWbsAssignment[]
-  paramDefs      ElementParamDefinition[]
-  paramValues    ElementParamValue[]
-  paramHistory   ElementParamHistory[]
-  suppliers      Supplier[]
-
+  id         String    @id @default(cuid())
+  name       String
+  code       String?   @unique
+  createdAt  DateTime  @default(now())
   archivedAt DateTime?
 
+  ifcModels IfcModel[]
+  members   ProjectMember[]
+
+  // Domain catalogs
+  wbsNodes  WbsNode[]
+  suppliers Supplier[]
+
+  // Aedera domain state (optional to query without joins)
+  classifications AederaClassification[]
+
+  // Optional: user-defined parameters (non-IFC raw)
+  paramDefs               ElementParamDefinition[]
+  paramValues             ElementParamValue[]
+  paramHistory            ElementParamHistory[]
+  classificationHistories ClassificationHistory[]
+
   @@index([code])
-}
-
-model IfcModel {
-  id        String  @id
-  projectId String
-  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  label     String
-  fileName  String
-  fileKey   String
-  size      Int?
-  createdAt DateTime @default(now())
-
-  @@index([projectId])
-}
-
-model ElementDatiWbs {
-  id        String  @id @default(cuid())
-  projectId String
-  project   Project @relation(fields: [projectId], references: [id])
-
-  ifcGlobalId String // GUID IFC dell'elemento
-  modelLabel  String? // opzionale: nome del modello IFC di riferimento
-
-  // campi DATI_WBS
-  wbs0  String?
-  wbs1  String?
-  wbs2  String?
-  wbs3  String?
-  wbs4  String?
-  wbs5  String?
-  wbs6  String?
-  wbs7  String?
-  wbs8  String?
-  wbs9  String?
-  wbs10 String?
-
-  tariffaCodice   String?
-  pacchettoCodice String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Non vogliamo duplicati per lo stesso elemento di un progetto
-  @@unique([projectId, ifcGlobalId])
-  @@index([projectId])
-  @@index([ifcGlobalId])
 }
 
 model User {
@@ -93,9 +51,11 @@ model User {
   sessions    Session[]
   memberships ProjectMember[]
 
-  elementParamHistory ElementParamHistory[]
-
   platformRole PlatformRole @default(USER)
+
+  // audit
+  elementParamHistory   ElementParamHistory[]
+  classificationHistory ClassificationHistory[]
 }
 
 model Session {
@@ -133,15 +93,62 @@ enum ProjectRole {
   VIEWER
 }
 
-enum ElementParamType {
-  STRING
-  NUMBER
-  BOOLEAN
-  ENUM
-  DATE
-  JSON
-  SUPPLIER
+//
+// --------------------
+// IFC Models & Elements (minimal index)
+// --------------------
+//
+
+model IfcModel {
+  id        String  @id @default(cuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  label     String
+  fileName  String
+  fileKey   String
+  size      Int?
+  createdAt DateTime @default(now())
+
+  // Minimal element index (modelId + guid)
+  elements ModelElement[]
+
+  // Persisted domain + QTO
+  classifications AederaClassification[]
+  qtos            ElementQto[]
+
+  @@index([projectId])
+  @@index([projectId, label])
 }
+
+model ModelElement {
+  id String @id @default(cuid())
+
+  modelId String
+  model   IfcModel @relation(fields: [modelId], references: [id], onDelete: Cascade)
+
+  guid     String // IfcGlobalId
+  ifcType  String // e.g. IfcWall
+  name     String?
+  typeName String?
+  category String?
+
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  aederaClassification AederaClassification?
+  elementQto           ElementQto?
+
+  // allow safe multi-model uniqueness
+  @@unique([modelId, guid])
+  @@index([modelId, ifcType])
+  @@index([guid])
+}
+
+//
+// --------------------
+// Aedera Domain: WBS & Supplier
+// --------------------
+//
 
 model WbsNode {
   id        String  @id @default(cuid())
@@ -159,28 +166,143 @@ model WbsNode {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  assignments ElementWbsAssignment[]
-  history     ElementParamHistory[]
+  classifications AederaClassification[]
 
   @@unique([projectId, code])
   @@index([projectId, parentId])
 }
 
-model ElementWbsAssignment {
+model Supplier {
   id        String  @id @default(cuid())
   projectId String
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
-  ifcGlobalId String
-
-  wbsNodeId String
-  wbsNode   WbsNode @relation(fields: [wbsNodeId], references: [id], onDelete: Restrict)
+  name     String
+  code     String?
+  isActive Boolean @default(true)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([projectId, ifcGlobalId])
+  classifications AederaClassification[]
+
+  @@unique([projectId, name])
+  @@index([projectId, isActive])
+}
+
+//
+// --------------------
+// Domain view per element (Aedera truth)
+// --------------------
+//
+
+enum ClassificationSource {
+  IFC_IMPORT
+  MANUAL
+  RULE
+}
+
+model AederaClassification {
+  id String @id @default(cuid())
+
+  // Link to model & element (composite relation)
+  modelId String
+  guid    String
+
+  element ModelElement @relation(fields: [modelId, guid], references: [modelId, guid], onDelete: Cascade)
+  model   IfcModel     @relation(fields: [modelId], references: [id], onDelete: Cascade)
+
+  // Keep projectId for simpler filtering (denormalized but practical)
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  // WBS as FK
+  wbsNodeId String?
+  wbsNode   WbsNode? @relation(fields: [wbsNodeId], references: [id], onDelete: SetNull)
+
+  // Supplier as FK
+  supplierId String?
+  supplier   Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+
+  // Other codes (upgrade to FK tables later)
+  tariffaCode       String?
+  pacchettoCode     String?
+  materialeCode     String?
+  progettazioneCode String?
+
+  source ClassificationSource @default(MANUAL)
+  ruleId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([modelId, guid])
+  @@index([projectId])
+  @@index([projectId, modelId])
   @@index([projectId, wbsNodeId])
+  @@index([projectId, supplierId])
+}
+
+model ClassificationHistory {
+  id        String  @id @default(cuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  modelId String
+  guid    String
+
+  // old/new snapshots
+  oldValueJson Json?
+  newValueJson Json?
+
+  source    String   @default("UI")
+  changedAt DateTime @default(now())
+
+  changedByUserId String
+  changedBy       User   @relation(fields: [changedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([projectId, modelId, guid, changedAt])
+}
+
+//
+// --------------------
+// QTO persisted (computed in viewer once, stored server-side)
+// --------------------
+//
+
+model ElementQto {
+  id String @id @default(cuid())
+
+  modelId String
+  guid    String
+
+  element ModelElement @relation(fields: [modelId, guid], references: [modelId, guid], onDelete: Cascade)
+  model   IfcModel     @relation(fields: [modelId], references: [id], onDelete: Cascade)
+
+  // MVP: store computed measures as JSON
+  qtoJson Json
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([modelId, guid])
+  @@index([modelId])
+}
+
+//
+// --------------------
+// Optional: Aedera user-defined params (non IFC raw)
+// --------------------
+//
+
+enum ElementParamType {
+  STRING
+  NUMBER
+  BOOLEAN
+  ENUM
+  DATE
+  JSON
+  SUPPLIER
 }
 
 model ElementParamDefinition {
@@ -198,14 +320,12 @@ model ElementParamDefinition {
   isReadOnly  Boolean @default(false)
   isMulti     Boolean @default(false)
 
-  // opzionale: filtro per classe IFC (es: "IfcWall,IfcSlab")
   ifcClassFilter String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  values ElementParamValue[]
-
+  values  ElementParamValue[]
   history ElementParamHistory[]
 
   @@unique([projectId, key])
@@ -217,7 +337,8 @@ model ElementParamValue {
   projectId String
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
-  ifcGlobalId String
+  modelId String
+  guid    String
 
   definitionId String
   definition   ElementParamDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
@@ -227,8 +348,9 @@ model ElementParamValue {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([projectId, ifcGlobalId, definitionId])
+  @@unique([modelId, guid, definitionId])
   @@index([projectId, definitionId])
+  @@index([modelId])
 }
 
 model ElementParamHistory {
@@ -236,16 +358,13 @@ model ElementParamHistory {
   projectId String
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
-  ifcGlobalId String
+  modelId String
+  guid    String
 
-  // "WBS" oppure "PARAM"
-  kind String
+  kind String // "CLASSIFICATION" / "PARAM" ecc. (puoi trasformarlo in enum più avanti)
 
   definitionId String?
   definition   ElementParamDefinition? @relation(fields: [definitionId], references: [id], onDelete: SetNull)
-
-  wbsNodeId String?
-  wbsNode   WbsNode? @relation(fields: [wbsNodeId], references: [id], onDelete: SetNull)
 
   oldValueJson Json?
   newValueJson Json?
@@ -256,22 +375,6 @@ model ElementParamHistory {
   source    String   @default("UI")
   changedAt DateTime @default(now())
 
-  @@index([projectId, ifcGlobalId, changedAt])
+  @@index([projectId, modelId, guid, changedAt])
   @@index([projectId, kind, changedAt])
-}
-
-model Supplier {
-  id        String  @id @default(cuid())
-  projectId String
-  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  name     String
-  code     String?
-  isActive Boolean @default(true)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([projectId, name])
-  @@index([projectId, isActive])
 }

@@ -86,7 +86,37 @@ export class ProjectsService {
         },
       });
 
-      return project;
+      
+      await tx.elementParamDefinition.upsert({
+        where: { projectId_key: { projectId: project.id, key: "tariffaCodice" } },
+        update: {},
+        create: {
+          projectId: project.id,
+          key: "tariffaCodice",
+          label: "Codice tariffa",
+          type: "STRING",
+          isMulti: false,
+          isActive: true,
+          isRequired: false,
+          isReadOnly: false,
+        },
+      });
+
+      await tx.elementParamDefinition.upsert({
+        where: { projectId_key: { projectId: project.id, key: "pacchettoCodice" } },
+        update: {},
+        create: {
+          projectId: project.id,
+          key: "pacchettoCodice",
+          label: "Codice pacchetto",
+          type: "STRING",
+          isMulti: false,
+          isActive: true,
+          isRequired: false,
+          isReadOnly: false,
+        },
+      });
+return project;
     });
   }
 
