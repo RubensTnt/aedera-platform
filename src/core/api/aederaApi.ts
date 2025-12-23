@@ -569,6 +569,25 @@ export async function bulkSetWbsAssignmentsV2(
   return { updated, skipped };
 }
 
+export async function promoteInvalidWbsAssignmentsV2(
+  projectId: string,
+  payload: { levelKey: string; modelId?: string; dryRun?: boolean },
+): Promise<{ scanned: number; promoted: number; dryRun?: boolean; message?: string }> {
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/wbs/assignments-v2/promote-invalid`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(`promoteInvalidWbsAssignmentsV2 failed: ${res.status} ${txt}`);
+  }
+
+  return res.json();
+}
+
 // ----------------------
 // Suppliers
 // ----------------------

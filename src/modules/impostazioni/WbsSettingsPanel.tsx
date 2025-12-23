@@ -6,9 +6,12 @@ import {
   listWbsAllowedValues,
   requireProjectId,
   type WbsAllowedValueDto,
+  promoteInvalidWbsAssignmentsV2,
 } from "@core/api/aederaApi";
 import { ALL_WBS_LEVEL_KEYS, type WbsLevelKey } from "@core/bim/datiWbsProfile";
 import { useProjects } from "@core/projects/ProjectContext";
+import { getActiveModelId } from "@core/bim/modelRegistry";
+import { hydrateBimMappingForModel } from "@core/bim/selectionAdapter";
 
 type Row = {
   id?: string;
@@ -82,6 +85,7 @@ export const WbsSettingsPanel: React.FC = () => {
 
   const [csvText, setCsvText] = useState("");
   const [isImportOpen, setIsImportOpen] = useState(false);
+  const [isPromoting, setIsPromoting] = useState(false);
 
   const load = async (lvl: WbsLevelKey) => {
     setIsLoading(true);
@@ -109,6 +113,58 @@ export const WbsSettingsPanel: React.FC = () => {
       setIsLoading(false);
     }
   };
+
+  const handlePromote = async () => {
+    if (!projectId) return;
+
+    setStatus(null);
+    setIsPromoting(true);
+
+    try {
+      // 1) preview
+      const preview = await promoteInvalidWbsAssignmentsV2(projectId, {
+        levelKey,
+        dryRun: true,
+      });
+
+      const count = preview.promoted ?? 0;
+
+      if (count <= 0) {
+        setStatus("Nessun INVALID corrisponde ai valori ammessi attivi per questo livello.");
+        return;
+      }
+
+      const ok = window.confirm(
+        `Trovati ${count} assignment INVALID promuovibili su ${levelKey}.\nVuoi promuoverli a VALID?`,
+      );
+      if (!ok) {
+        setStatus("Operazione annullata.");
+        return;
+      }
+
+      // 2) execute
+      const done = await promoteInvalidWbsAssignmentsV2(projectId, {
+        levelKey,
+        dryRun: false,
+      });
+
+      setStatus(`Promossi: ${done.promoted} (scansionati: ${done.scanned}).`);
+
+      // refresh allowed-values (non strettamente necessario) + tabella
+      await load(levelKey);
+
+      // Aggiorniamo l’overlay senza refresh pagina:
+      const activeModelId = getActiveModelId();
+      if (activeModelId) {
+        await hydrateBimMappingForModel(activeModelId, projectId);
+      }
+    } catch (e: any) {
+      setStatus(e?.message ?? "Errore durante la promozione.");
+    } finally {
+      setIsPromoting(false);
+    }
+  };
+
 
   useEffect(() => {
     void load(levelKey);
@@ -312,6 +368,21 @@ export const WbsSettingsPanel: React.FC = () => {
           >
             Esporta CSV
           </button>
+
+          <button
+            type="button"
+            onClick={handlePromote}
+            disabled={isLoading || isPromoting}
+            className={[
+              "rounded-md px-2 py-1 text-[12px] border",
+              isLoading || isPromoting
+                ? "border-slate-200 bg-slate-100 text-slate-400"
+                : "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
+            ].join(" ")}
+          >
+            Promuovi INVALID → VALID
+          </button>
+
         </div>
 
         <button
