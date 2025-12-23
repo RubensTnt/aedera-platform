@@ -12,16 +12,28 @@ export const DatiWbsProfileSettingsPanel: React.FC = () => {
   const handleToggleLevel = (key: WbsLevelKey, field: "enabled" | "required") => {
     if (!isProjectAdmin) return;
 
-    const levels = profile.levels.map((lvl) =>
-      lvl.key === key ? { ...lvl, [field]: !lvl[field] } : lvl,
-    );
+    const levels = profile.levels.map((lvl) => {
+      if (lvl.key !== key) return lvl;
 
-    const next: DatiWbsProfile = {
-      ...profile,
-      levels,
-    };
+      if (field === "enabled") {
+        const nextEnabled = !lvl.enabled;
+        return {
+          ...lvl,
+          enabled: nextEnabled,
+          required: nextEnabled ? lvl.required : false, // se disabilito => required false
+        };
+      }
 
-    setProfile(next);
+      // field === "required"
+      const nextRequired = !lvl.required;
+      return {
+        ...lvl,
+        enabled: nextRequired ? true : lvl.enabled, // se imposto required => enabled true
+        required: nextRequired,
+      };
+    });
+
+    setProfile({ ...profile, levels });
   };
 
   const handleToggleTariffaRequired = () => {

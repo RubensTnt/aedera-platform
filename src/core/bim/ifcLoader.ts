@@ -5,6 +5,7 @@ import { getAederaViewer } from "@core/bim/thatopen";
 import { upsertIfcModel } from "./modelRegistry";
 import { setBimMappingForModel, type BimMappingRow } from "@core/bim/bimMappingStore";
 import { getAllElements } from "@core/bim/modelProperties";
+import { ALL_WBS_LEVEL_KEYS } from "@core/bim/datiWbsProfile";
 import {
   extractPropertiesForModel,
   listIfcTypes,
@@ -13,10 +14,11 @@ import {
 } from "@core/bim/modelProperties";
 import {
   bulkGetElementParams,
-  bulkGetWbsAssignments,
+  bulkGetWbsAssignmentsV2,
   requireProjectId,
   indexElementsForModel,
 } from "@core/api/aederaApi";
+
 
 
 function buildIndexElementsPayload(modelId: string) {
@@ -129,29 +131,24 @@ export async function loadIfcFromFile(
       const elements = getAllElements(modelId) ?? [];
       const guids = elements.map((e) => e.globalId).filter((v): v is string => !!v);
 
-      const [wbsResp, paramsResp] = await Promise.all([
-        bulkGetWbsAssignments(projectId, { modelId: ifcModelId, guids }),
+      const [wbsV2Resp, paramsResp] = await Promise.all([
+        bulkGetWbsAssignmentsV2(projectId, { modelId: ifcModelId, guids, levels: ALL_WBS_LEVEL_KEYS }),
         bulkGetElementParams(projectId, {
           modelId: ifcModelId,
           guids,
-          keys: ["tariffaCodice", "pacchettoCodice", "codiceMateriale", "fornitoreId"],
+          keys: ["tariffaCodice", "pacchettoCodice", "codiceMateriale", "fornitoreIds"],
         } as any),
       ]);
-
-      const wbsMap =
-        (wbsResp as any).assignmentByGuid ??
-        (wbsResp as any).assignmentByGlobalId ??
-        {};
 
       const rows: BimMappingRow[] = guids.map((gid) => {
         const v = (paramsResp as any).values?.[gid] ?? {};
         return {
           globalId: gid,
-          wbsNodeId: wbsMap[gid] ?? null,
+          wbsByLevel: (wbsV2Resp as any).values?.[gid] ?? undefined,
           tariffaCodice: v["tariffaCodice"] ?? null,
           pacchettoCodice: v["pacchettoCodice"] ?? null,
           codiceMateriale: v["codiceMateriale"] ?? null,
-          fornitoreId: v["fornitoreId"] ?? null,
+          fornitoreIds: v["fornitoreIds"] ?? null,
         };
       });
 

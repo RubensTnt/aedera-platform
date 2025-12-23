@@ -2,6 +2,8 @@
 
 import * as THREE from "three";
 import * as OBC from "@thatopen/components";
+import { getLocalIdsByGlobalIds } from "./modelProperties";
+
 
 export interface AederaViewerContext {
   components: OBC.Components;
@@ -130,3 +132,56 @@ import { poEngine } from "../po/poEngine";
   po: poEngine,
 };
 
+
+export type ViewerFilterMode = "ISOLATE" | "HIDE" | "RESET";
+
+/**
+ * Applica filtro visibilità nel viewer basato su globalIds (GUID IFC).
+ * modelIdToGlobalIds usa come chiave il modelId di ThatOpen (quello che usi in modelProperties/store).
+ */
+export async function applyViewerFilterByGlobalIds(
+  modelIdToGlobalIds: Record<string, string[]>,
+  mode: ViewerFilterMode,
+) {
+  const ctx = getAederaViewer();
+  if (!ctx) return;
+
+  const { components } = ctx;
+  const fragments = components.get(OBC.FragmentsManager);
+  const hider = components.get(OBC.Hider);
+
+  if (mode === "RESET") {
+    await (hider as any).set?.(true);
+    return;
+  }
+
+  const modelIdMap: any = {};
+
+  // fragments.list è un "items list" (non sempre tipizzato come Map),
+  // quindi lo gestiamo in modo robusto.
+  const listAny: any = (fragments as any).list;
+  const iterable =
+    (listAny && listAny[Symbol.iterator] ? listAny : listAny?.items) ?? [];
+
+  for (const it of iterable as any) {
+    const model = it?.value ?? it?.[1] ?? it;
+    if (!model) continue;
+
+    const mid = String(model.modelId);
+    const gids = modelIdToGlobalIds[mid] ?? [];
+    if (!gids.length) continue;
+
+    const localIds = getLocalIdsByGlobalIds(mid, gids);
+    if (!localIds.length) continue;
+
+    modelIdMap[model.modelId] = new Set(localIds);
+  }
+
+  if (!Object.keys(modelIdMap).length) return;
+
+  if (mode === "ISOLATE") {
+    await (hider as any).isolate?.(modelIdMap);
+  } else {
+    await (hider as any).set?.(false, modelIdMap);
+  }
+}

@@ -8,9 +8,24 @@ import * as THREE from "three";
 import { getAederaViewer } from "./thatopen";
 import { getElementRecord, getAllElements } from "./modelProperties";
 
-import { getBimMappingRow, patchBimMappingRows, setBimMappingForModel, type BimMappingRow } from "./bimMappingStore";
-import { requireProjectId, bulkSetWbsAssignments, setElementParamValue, bulkGetElementParams, bulkGetWbsAssignments } from "@core/api/aederaApi";
+import {
+  getBimMappingRow,
+  patchBimMappingRows,
+  setBimMappingForModel,
+  type BimMappingRow,
+} from "./bimMappingStore";
 
+import {
+  requireProjectId,
+  bulkSetWbsAssignmentsV2,
+  bulkGetWbsAssignmentsV2,
+  bulkSetElementParams,
+  bulkGetElementParams,
+  type WbsAssignmentV2Dto,
+} from "@core/api/aederaApi";
+
+import { ALL_WBS_LEVEL_KEYS, type WbsLevelKey } from "./datiWbsProfile";
+import { getModelInfo } from "./modelRegistry";
 
 // Highlighter styles: “mapping completeness”
 const MAPPING_COMPLETE_STYLE = "mapping-complete";
@@ -107,9 +122,6 @@ async function getSelectedElements(): Promise<FlatSelected[]> {
       result.push({ modelId, localId, globalId: rec?.globalId });
     }
   }
-  
-  const withGuid = result.filter((r) => !!r.globalId).length;
-  console.log("[SEL] selected", result.length, "with globalId", withGuid, "sample", result[0]);
 
   return result;
 }
@@ -118,25 +130,26 @@ export async function selectElementsByLocalIds(modelId: string, localIds: number
   const highlighter = await getHighlighterInstance();
   if (!highlighter) return;
 
-  const selection: SelectionMap = {};
+  const selection: any = {};
   selection[modelId] = new Set(localIds);
-
   await highlighter.highlightByID("select", selection as any, true, false);
 }
 
 // ----------------------
-// BIM Mapping (server-based)
+// BIM Mapping (server-based) - WBS v2-only
 // ----------------------
 
 export type SelectedElementWithBimMapping = {
   modelId: string;
   localId: number;
   globalId: string;
-  wbsNodeId: string | null;
+
+  wbsByLevel?: Record<string, WbsAssignmentV2Dto | null>;
+
   tariffaCodice: string | null;
   pacchettoCodice: string | null;
   codiceMateriale?: string | null;
-  fornitoreId?: string | null;
+  fornitoreIds?: string[] | null;
 };
 
 export async function getSelectedElementsWithBimMapping(): Promise<SelectedElementWithBimMapping[]> {
@@ -150,21 +163,21 @@ export async function getSelectedElementsWithBimMapping(): Promise<SelectedEleme
         modelId: s.modelId,
         localId: s.localId,
         globalId: s.globalId,
-        wbsNodeId: row?.wbsNodeId ?? null,
+        wbsByLevel: (row as any)?.wbsByLevel ?? undefined,
         tariffaCodice: row?.tariffaCodice ?? null,
         pacchettoCodice: row?.pacchettoCodice ?? null,
         codiceMateriale: row?.codiceMateriale ?? null,
-        fornitoreId: row?.fornitoreId ?? null,
+        fornitoreIds: (row as any)?.fornitoreIds ?? null,
       };
     });
 }
 
 export async function applyBimMappingToSelection(patch: {
-  wbsNodeId?: string | null;
+  wbsByLevel?: Partial<Record<WbsLevelKey, string | null>>;
   tariffaCodice?: string | null;
   pacchettoCodice?: string | null;
   codiceMateriale?: string | null;
-  fornitoreId?: string | null;
+  fornitoreIds?: string[] | null;
 }) {
   const selected = await getSelectedElementsWithBimMapping();
   if (!selected.length) return;
@@ -172,33 +185,67 @@ export async function applyBimMappingToSelection(patch: {
   const projectId = requireProjectId();
   const modelId = selected[0].modelId;
 
-  if ("wbsNodeId" in patch) {
-    await bulkSetWbsAssignments(projectId, {
-      items: selected.map((s) => ({ globalId: s.globalId, wbsNodeId: patch.wbsNodeId ?? null })),
+  const serverModelId = getModelInfo(modelId)?.serverId;
+  if (!serverModelId) throw new Error("Missing serverId for current model (upload id).");
+
+  // WBS v2
+  if (patch.wbsByLevel && Object.keys(patch.wbsByLevel).length) {
+    const wbsItems: Array<{ guid: string; levelKey: string; code: string | null }> = [];
+    for (const s of selected) {
+      for (const [levelKey, code] of Object.entries(patch.wbsByLevel)) {
+        wbsItems.push({ guid: s.globalId, levelKey, code: code ?? null });
+      }
+    }
+
+    await bulkSetWbsAssignmentsV2(projectId, {
+      modelId: serverModelId,
+      source: "UI",
+      overwrite: true,
+      items: wbsItems,
     });
   }
 
-  const paramPairs: Array<[keyof typeof patch, string]> = [
-    ["tariffaCodice", "tariffaCodice"],
-    ["pacchettoCodice", "pacchettoCodice"],
-    ["codiceMateriale", "codiceMateriale"],
-    ["fornitoreId", "fornitoreId"],
-  ];
+  // Params
+  const paramItems: Array<{ guid: string; key: string; value: any }> = [];
+  const add = (key: string, value: any) => {
+    for (const s of selected) paramItems.push({ guid: s.globalId, key, value });
+  };
 
-  for (const s of selected) {
-    for (const [k, key] of paramPairs) {
-      if (!(k in patch)) continue;
-      await setElementParamValue(projectId, s.globalId, key, (patch as any)[k]);
-    }
+  if ("tariffaCodice" in patch) add("tariffaCodice", patch.tariffaCodice ?? null);
+  if ("pacchettoCodice" in patch) add("pacchettoCodice", patch.pacchettoCodice ?? null);
+  if ("codiceMateriale" in patch) add("codiceMateriale", patch.codiceMateriale ?? null);
+  if ("fornitoreIds" in patch) add("fornitoreIds", patch.fornitoreIds ?? null);
+
+  if (paramItems.length) {
+    await bulkSetElementParams(projectId, {
+      modelId: serverModelId,
+      items: paramItems,
+      source: "UI",
+    });
   }
 
+  // Update cache locale (ottimistico)
   const updatedRows: BimMappingRow[] = selected.map((s) => ({
     globalId: s.globalId,
-    wbsNodeId: "wbsNodeId" in patch ? (patch.wbsNodeId ?? null) : s.wbsNodeId,
+    wbsByLevel: patch.wbsByLevel
+      ? {
+          ...((s as any).wbsByLevel ?? {}),
+          ...Object.fromEntries(
+            Object.entries(patch.wbsByLevel).map(([k, v]) => [
+              k,
+              v == null || v === ""
+                ? null
+                : ({ status: "VALID", code: v, name: null, rawCode: null } as any),
+            ]),
+          ),
+        }
+      : ((s as any).wbsByLevel ?? undefined),
     tariffaCodice: "tariffaCodice" in patch ? (patch.tariffaCodice ?? null) : s.tariffaCodice,
-    pacchettoCodice: "pacchettoCodice" in patch ? (patch.pacchettoCodice ?? null) : s.pacchettoCodice,
-    codiceMateriale: "codiceMateriale" in patch ? (patch.codiceMateriale ?? null) : s.codiceMateriale,
-    fornitoreId: "fornitoreId" in patch ? (patch.fornitoreId ?? null) : s.fornitoreId,
+    pacchettoCodice:
+      "pacchettoCodice" in patch ? (patch.pacchettoCodice ?? null) : s.pacchettoCodice,
+    codiceMateriale:
+      "codiceMateriale" in patch ? (patch.codiceMateriale ?? null) : s.codiceMateriale,
+    fornitoreIds: "fornitoreIds" in patch ? (patch.fornitoreIds ?? null) : (s as any).fornitoreIds,
   }));
 
   patchBimMappingRows(modelId, projectId, updatedRows);
@@ -206,7 +253,6 @@ export async function applyBimMappingToSelection(patch: {
 
 // ----------------------
 // Heatmap (mapping completeness)
-// scan type contract: { elementsByStatus: { complete:number[], partial:number[], empty:number[] } }
 // ----------------------
 
 export type MappingScanResult = {
@@ -225,41 +271,24 @@ export async function applyBimMappingHeatmap(modelId: string, scan: MappingScanR
   (highlighter as any).clear?.(MAPPING_PARTIAL_STYLE);
   (highlighter as any).clear?.(MAPPING_EMPTY_STYLE);
 
-  const makeMap = (ids: number[]): SelectionMap => {
-    const map: SelectionMap = {};
+  const makeMap = (ids: number[]) => {
+    const map: any = {};
     map[modelId] = new Set(ids);
     return map;
   };
 
   if (scan.elementsByStatus.complete.length > 0) {
-    await highlighter.highlightByID(
-      MAPPING_COMPLETE_STYLE,
-      makeMap(scan.elementsByStatus.complete) as any,
-      false,
-      false,
-    );
+    await highlighter.highlightByID(MAPPING_COMPLETE_STYLE, makeMap(scan.elementsByStatus.complete), false, true);
   }
-
   if (scan.elementsByStatus.partial.length > 0) {
-    await highlighter.highlightByID(
-      MAPPING_PARTIAL_STYLE,
-      makeMap(scan.elementsByStatus.partial) as any,
-      false,
-      false,
-    );
+    await highlighter.highlightByID(MAPPING_PARTIAL_STYLE, makeMap(scan.elementsByStatus.partial), false, true);
   }
-
   if (scan.elementsByStatus.empty.length > 0) {
-    await highlighter.highlightByID(
-      MAPPING_EMPTY_STYLE,
-      makeMap(scan.elementsByStatus.empty) as any,
-      false,
-      false,
-    );
+    await highlighter.highlightByID(MAPPING_EMPTY_STYLE, makeMap(scan.elementsByStatus.empty), false, true);
   }
 }
 
-export async function clearBimMappingHeatmap(): Promise<void> {
+export async function clearBimMappingHeatmap(modelId: string): Promise<void> {
   const highlighter = await getHighlighterInstance();
   if (!highlighter) return;
 
@@ -268,6 +297,9 @@ export async function clearBimMappingHeatmap(): Promise<void> {
   (highlighter as any).clear?.(MAPPING_EMPTY_STYLE);
 }
 
+// ----------------------
+// Hydrate BIM Mapping (server -> cache)
+// ----------------------
 
 export async function hydrateBimMappingForModel(modelId: string, projectId?: string) {
   const pid = projectId ?? requireProjectId();
@@ -280,21 +312,32 @@ export async function hydrateBimMappingForModel(modelId: string, projectId?: str
     return;
   }
 
-  const [assignResp, paramsResp] = await Promise.all([
-    bulkGetWbsAssignments(pid, { globalIds }),
+  const serverModelId = getModelInfo(modelId)?.serverId;
+  if (!serverModelId) {
+    setBimMappingForModel(modelId, pid, []);
+    return;
+  }
+
+  const [assignV2Resp, paramsResp] = await Promise.all([
+    bulkGetWbsAssignmentsV2(pid, {
+      modelId: serverModelId,
+      guids: globalIds,
+      levels: ALL_WBS_LEVEL_KEYS,
+    }),
     bulkGetElementParams(pid, {
-      globalIds,
-      keys: ["tariffaCodice", "pacchettoCodice", "codiceMateriale", "fornitoreId"],
+      modelId: serverModelId,
+      guids: globalIds,
+      keys: ["tariffaCodice", "pacchettoCodice", "codiceMateriale", "fornitoreIds"],
     }),
   ]);
 
   const rows: BimMappingRow[] = globalIds.map((gid) => ({
     globalId: gid,
-    wbsNodeId: assignResp.assignmentByGlobalId?.[gid] ?? null,
+    wbsByLevel: (assignV2Resp as any).values?.[gid] ?? undefined,
     tariffaCodice: paramsResp.values?.[gid]?.tariffaCodice ?? null,
     pacchettoCodice: paramsResp.values?.[gid]?.pacchettoCodice ?? null,
     codiceMateriale: paramsResp.values?.[gid]?.codiceMateriale ?? null,
-    fornitoreId: paramsResp.values?.[gid]?.fornitoreId ?? null,
+    fornitoreIds: paramsResp.values?.[gid]?.fornitoreIds ?? null,
   }));
 
   setBimMappingForModel(modelId, pid, rows);

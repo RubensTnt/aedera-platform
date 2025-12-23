@@ -1,9 +1,15 @@
+// server/src/element-params/element-params.service.ts
+
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
-import type { ElementParamType } from "@prisma/client";
+import { Prisma, ElementParamType } from "@prisma/client";
 
 function isStringArray(x: any): x is string[] {
   return Array.isArray(x) && x.every((v) => typeof v === "string");
+}
+
+function isSupplierIdArray(x: any): x is string[] {
+  return Array.isArray(x) && x.every((v) => typeof v === "string" && v.trim().length > 0);
 }
 
 @Injectable()
@@ -37,30 +43,35 @@ export class ElementParamsService {
   }
 
   async updateDefinition(projectId: string, id: string, patch: any) {
-    // protezione: non permettere di cambiare projectId
-    return this.prisma.elementParamDefinition.update({
-      where: { id },
-      data: {
-        label: typeof patch.label === "string" ? patch.label.trim() : undefined,
-        isMulti: typeof patch.isMulti === "boolean" ? patch.isMulti : undefined,
-        optionsJson: patch.optionsJson !== undefined ? patch.optionsJson : undefined,
-        isActive: typeof patch.isActive === "boolean" ? patch.isActive : undefined,
-        isRequired: typeof patch.isRequired === "boolean" ? patch.isRequired : undefined,
-        isReadOnly: typeof patch.isReadOnly === "boolean" ? patch.isReadOnly : undefined,
-        ifcClassFilter: patch.ifcClassFilter !== undefined ? (patch.ifcClassFilter ?? null) : undefined,
-      },
-    }).then(async (def) => {
-      // sanity: se qualcuno prova a patchare una def di un altro progetto
-      if (def.projectId !== projectId) throw new BadRequestException("Wrong projectId");
-      return def;
-    });
-  }
+    const data = {
+      label: typeof patch.label === "string" ? patch.label.trim() : undefined,
+      isMulti: typeof patch.isMulti === "boolean" ? patch.isMulti : undefined,
+      optionsJson: patch.optionsJson !== undefined ? patch.optionsJson : undefined,
+      isActive: typeof patch.isActive === "boolean" ? patch.isActive : undefined,
+      isRequired: typeof patch.isRequired === "boolean" ? patch.isRequired : undefined,
+      isReadOnly: typeof patch.isReadOnly === "boolean" ? patch.isReadOnly : undefined,
+      ifcClassFilter:
+        patch.ifcClassFilter !== undefined ? (patch.ifcClassFilter ?? null) : undefined,
+    };
 
+    const r = await this.prisma.elementParamDefinition.updateMany({
+      where: { id, projectId },
+      data,
+    });
+
+    if (r.count === 0) throw new BadRequestException("Wrong projectId");
+
+    return this.prisma.elementParamDefinition.findUnique({ where: { id } });
+  }
 
   // ---------- VALUES ----------
 
+  /**
+   * Ritorna values[guid][key] = valueJson
+   */
   async bulkGetValues(projectId: string, modelId: string, guids: string[], keys?: string[]) {
-    if (guids.length === 0) return { definitions: [], values: {} };
+    const cleanGuids = (guids ?? []).map((g) => String(g ?? "").trim()).filter(Boolean);
+    if (!modelId || cleanGuids.length === 0) return { definitions: [], values: {} };
 
     const defs = await this.prisma.elementParamDefinition.findMany({
       where: {
@@ -68,31 +79,45 @@ export class ElementParamsService {
         ...(keys?.length ? { key: { in: keys } } : {}),
         isActive: true,
       },
-      select: { id: true, key: true, label: true, type: true, isMulti: true, isRequired: true, isReadOnly: true },
+      select: {
+        id: true,
+        key: true,
+        label: true,
+        type: true,
+        isMulti: true,
+        isRequired: true,
+        isReadOnly: true,
+      },
       orderBy: { createdAt: "asc" },
     });
 
-    const values = await this.prisma.elementParamValue.findMany({
+    if (!defs.length) {
+      const empty: Record<string, Record<string, any>> = {};
+      for (const g of cleanGuids) empty[g] = {};
+      return { definitions: [], values: empty };
+    }
+
+    const rows = await this.prisma.elementParamValue.findMany({
       where: {
         projectId,
         modelId,
-        guid: { in: guids },
+        guid: { in: cleanGuids },
         definitionId: { in: defs.map((d) => d.id) },
       },
       select: { guid: true, definitionId: true, valueJson: true },
     });
 
     const defById = new Map(defs.map((d) => [d.id, d]));
-    const out: Record<string, Record<string, any>> = {};
-    for (const guid of guids) out[guid] = {};
+    const values: Record<string, Record<string, any>> = {};
+    for (const g of cleanGuids) values[g] = {};
 
-    for (const v of values) {
-      const def = defById.get(v.definitionId);
+    for (const r of rows) {
+      const def = defById.get(r.definitionId);
       if (!def) continue;
-      out[v.guid][def.key] = v.valueJson;
+      values[r.guid][def.key] = r.valueJson;
     }
 
-    return { definitions: defs, values: out };
+    return { definitions: defs, values };
   }
 
   async setValue(args: {
@@ -106,41 +131,46 @@ export class ElementParamsService {
   }) {
     const { projectId, modelId, guid, key, value, source, changedByUserId } = args;
     if (!changedByUserId) throw new BadRequestException("Missing user");
+    if (!modelId || !guid) throw new BadRequestException("Missing modelId/guid");
+
+    const cleanGuid = String(guid).trim();
+    const cleanKey = String(key).trim();
+    if (!cleanGuid || !cleanKey) throw new BadRequestException("Missing guid/key");
 
     const def = await this.prisma.elementParamDefinition.findUnique({
-      where: { projectId_key: { projectId, key } },
+      where: { projectId_key: { projectId, key: cleanKey } },
     });
-    if (!def) throw new NotFoundException(`Param definition not found: ${key}`);
-    if (!def.isActive) throw new BadRequestException(`Param not active: ${key}`);
-    if (def.isReadOnly) throw new BadRequestException(`Param is read-only: ${key}`);
+    if (!def) throw new NotFoundException(`Param definition not found: ${cleanKey}`);
+    if (!def.isActive) throw new BadRequestException(`Param not active: ${cleanKey}`);
+    if (def.isReadOnly) throw new BadRequestException(`Param is read-only: ${cleanKey}`);
 
-    // Validazioni minime (come prima)
+    // ---- Validation by type
     if (def.type === "STRING") {
       if (def.isMulti) {
         if (!isStringArray(value)) throw new BadRequestException("Expected string[]");
       } else {
-        if (typeof value !== "string") throw new BadRequestException("Expected string");
+        if (value !== null && typeof value !== "string") throw new BadRequestException("Expected string");
       }
     }
 
     if (def.type === "SUPPLIER") {
-      if (!def.isMulti) throw new BadRequestException("SUPPLIER param must be multi (supplierId[])");
-      if (!Array.isArray(value) || value.some((v) => typeof v !== "string")) {
-        throw new BadRequestException("Expected supplierId[]");
+      // tu hai scelto: fornitori MULTI (supplierId[])
+      if (!def.isMulti) {
+        throw new BadRequestException("SUPPLIER param must be multi (supplierId[])");
       }
-      const count = await this.prisma.supplier.count({
-        where: { projectId, id: { in: value }, isActive: true },
-      });
-      if (count !== value.length) throw new BadRequestException("One or more suppliers not found or inactive");
+      if (value !== null && value !== undefined) {
+        if (!isSupplierIdArray(value)) throw new BadRequestException("Expected supplierId[]");
+        const ids = value as string[];
+        const count = await this.prisma.supplier.count({
+          where: { projectId, id: { in: ids }, isActive: true },
+        });
+        if (count !== ids.length) throw new BadRequestException("One or more suppliers not found or inactive");
+      }
     }
 
     const existing = await this.prisma.elementParamValue.findUnique({
       where: {
-        modelId_guid_definitionId: {
-          modelId,
-          guid,
-          definitionId: def.id,
-        },
+        modelId_guid_definitionId: { modelId, guid: cleanGuid, definitionId: def.id },
       },
       select: { id: true, valueJson: true },
     });
@@ -150,17 +180,13 @@ export class ElementParamsService {
 
     const updated = await this.prisma.elementParamValue.upsert({
       where: {
-        modelId_guid_definitionId: {
-          modelId,
-          guid,
-          definitionId: def.id,
-        },
+        modelId_guid_definitionId: { modelId, guid: cleanGuid, definitionId: def.id },
       },
       update: { valueJson: newValue },
       create: {
         projectId,
         modelId,
-        guid,
+        guid: cleanGuid,
         definitionId: def.id,
         valueJson: newValue,
       },
@@ -171,11 +197,11 @@ export class ElementParamsService {
         data: {
           projectId,
           modelId,
-          guid,
+          guid: cleanGuid,
           kind: "PARAM",
           definitionId: def.id,
-          oldValueJson: oldValue as any,
-          newValueJson: newValue as any,
+          oldValueJson: (oldValue ?? Prisma.JsonNull) as any,
+          newValueJson: (newValue ?? Prisma.JsonNull) as any,
           changedByUserId,
           source,
         },
@@ -194,12 +220,13 @@ export class ElementParamsService {
   }) {
     const { projectId, modelId, items, source, changedByUserId } = args;
     if (!changedByUserId) throw new BadRequestException("Missing user");
+    if (!modelId) throw new BadRequestException("Missing modelId");
 
     const clean = (items ?? [])
       .map((it) => ({
-        guid: String(it.guid ?? "").trim(),
-        key: String(it.key ?? "").trim(),
-        value: it.value ?? null,
+        guid: String((it as any).guid ?? "").trim(),
+        key: String((it as any).key ?? "").trim(),
+        value: (it as any).value ?? null,
       }))
       .filter((it) => it.guid.length > 0 && it.key.length > 0);
 
@@ -219,6 +246,7 @@ export class ElementParamsService {
         if (d.isReadOnly) throw new BadRequestException(`Param is read-only: ${k}`);
       }
 
+      // preload existing values
       const defIds = defs.map((d) => d.id);
       const guids = [...new Set(clean.map((c) => c.guid))];
 
@@ -235,16 +263,16 @@ export class ElementParamsService {
       const byKey = new Map<string, typeof existing[number]>();
       for (const e of existing) byKey.set(`${e.guid}::${e.definitionId}`, e);
 
-      // SUPPLIER: validate all ids once
+      // SUPPLIER validate once
       const supplierIdsToCheck = new Set<string>();
       for (const it of clean) {
         const def = defByKey.get(it.key)!;
         if (def.type === "SUPPLIER") {
           if (!def.isMulti) throw new BadRequestException("SUPPLIER param must be multi (supplierId[])");
-          if (!Array.isArray(it.value) || it.value.some((v) => typeof v !== "string")) {
-            throw new BadRequestException("Expected supplierId[]");
+          if (it.value != null) {
+            if (!isSupplierIdArray(it.value)) throw new BadRequestException("Expected supplierId[]");
+            for (const sid of it.value as string[]) supplierIdsToCheck.add(sid);
           }
-          for (const sid of it.value) supplierIdsToCheck.add(sid);
         }
       }
       if (supplierIdsToCheck.size) {
@@ -262,7 +290,7 @@ export class ElementParamsService {
           if (def.isMulti) {
             if (!isStringArray(it.value)) throw new BadRequestException("Expected string[]");
           } else {
-            if (typeof it.value !== "string") throw new BadRequestException("Expected string");
+            if (it.value !== null && typeof it.value !== "string") throw new BadRequestException("Expected string");
           }
         }
 
@@ -297,8 +325,8 @@ export class ElementParamsService {
             guid: it.guid,
             kind: "PARAM",
             definitionId: def.id,
-            oldValueJson: oldValue as any,
-            newValueJson: newValue as any,
+            oldValueJson: (oldValue ?? Prisma.JsonNull) as any,
+            newValueJson: (newValue ?? Prisma.JsonNull) as any,
             changedByUserId,
             source,
           },
@@ -311,15 +339,14 @@ export class ElementParamsService {
     });
   }
 
-
   // ---------- HISTORY ----------
-  
+
   getElementHistory(projectId: string, modelId: string, guid: string) {
+    if (!modelId || !guid) throw new BadRequestException("Missing modelId/guid");
     return this.prisma.elementParamHistory.findMany({
       where: { projectId, modelId, guid },
       orderBy: { changedAt: "desc" },
       take: 200,
     });
   }
-
 }

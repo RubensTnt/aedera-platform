@@ -1,15 +1,16 @@
+// server/src/wbs/wbs.controller.ts
+
 import {
   BadRequestException,
   Body,
   Controller,
-  Delete,
   Get,
   Param,
-  Patch,
   Post,
+  Query,
   Req,
+  UseGuards,
 } from "@nestjs/common";
-import { UseGuards } from "@nestjs/common";
 import { SessionGuard } from "../auth/session.guard";
 import { ProjectRoleGuard } from "../authz/project-role.guard";
 import { ProjectRoles } from "../authz/project-roles.decorator";
@@ -20,61 +21,91 @@ import { WbsService } from "./wbs.service";
 export class WbsController {
   constructor(private readonly service: WbsService) {}
 
-  @Get("nodes")
+  // -----------------------------
+  // Level settings (profilo livelli)
+  // -----------------------------
+
+  @Get("levels")
   @UseGuards(ProjectRoleGuard)
   @ProjectRoles("VIEWER", "EDITOR", "ADMIN", "OWNER")
-  listTree(@Param("projectId") projectId: string) {
-    return this.service.listTree(projectId);
+  listLevels(@Param("projectId") projectId: string) {
+    return this.service.listLevels(projectId);
   }
 
-  @Post("nodes")
+  @Post("levels/bulk-upsert")
   @UseGuards(ProjectRoleGuard)
   @ProjectRoles("ADMIN", "OWNER")
-  createNode(
+  bulkUpsertLevels(
     @Param("projectId") projectId: string,
-    @Body() body: { code: string; name: string; parentId?: string | null; sortIndex?: number },
+    @Body()
+    body: {
+      items: {
+        levelKey: string;
+        enabled?: boolean;
+        required?: boolean;
+        sortIndex?: number;
+        ifcParamKey?: string | null;
+      }[];
+    },
   ) {
-    if (!body?.code || !body?.name) throw new BadRequestException("Missing code/name");
-    return this.service.createNode(projectId, body);
+    const items = body?.items ?? [];
+    if (!Array.isArray(items)) throw new BadRequestException("items must be an array");
+    return this.service.bulkUpsertLevels(projectId, items);
   }
 
-  @Patch("nodes/:id")
-  @UseGuards(ProjectRoleGuard)
-  @ProjectRoles("ADMIN", "OWNER")
-  updateNode(
-    @Param("projectId") projectId: string,
-    @Param("id") id: string,
-    @Body() body: { code?: string; name?: string; parentId?: string | null; sortIndex?: number },
-  ) {
-    return this.service.updateNode(projectId, id, body);
-  }
+  // -----------------------------
+  // Allowed values (dizionario ammessi)
+  // -----------------------------
 
-  @Delete("nodes/:id")
-  @UseGuards(ProjectRoleGuard)
-  @ProjectRoles("ADMIN", "OWNER")
-  removeNode(@Param("projectId") projectId: string, @Param("id") id: string) {
-    return this.service.deleteNode(projectId, id);
-  }
-
-  @Post("ensure-paths")
-  @UseGuards(ProjectRoleGuard)
-  @ProjectRoles("ADMIN", "OWNER", "EDITOR")
-  ensurePaths(
-    @Param("projectId") projectId: string,
-    @Body() body: { paths: { segments: { code: string; name?: string }[] }[] },
-  ) {
-    const paths = body?.paths ?? [];
-    if (!Array.isArray(paths)) throw new BadRequestException("paths must be an array");
-    return this.service.ensurePaths(projectId, paths);
-  }
-
-  // ✅ IMPORTANT: modelId sempre richiesto
-  @Post("assignments/bulk-get")
+  @Get("allowed-values")
   @UseGuards(ProjectRoleGuard)
   @ProjectRoles("VIEWER", "EDITOR", "ADMIN", "OWNER")
-  bulkGetAssignments(
+  listAllowedValues(
     @Param("projectId") projectId: string,
-    @Body() body: { modelId: string; guids?: string[] },
+    @Query("levels") levelsCsv?: string,
+  ) {
+    const levels =
+      typeof levelsCsv === "string" && levelsCsv.trim().length
+        ? levelsCsv
+            .split(",")
+            .map((x) => x.trim())
+            .filter(Boolean)
+        : undefined;
+
+    return this.service.listAllowedValues(projectId, levels);
+  }
+
+  @Post("allowed-values/bulk-upsert")
+  @UseGuards(ProjectRoleGuard)
+  @ProjectRoles("ADMIN", "OWNER")
+  bulkUpsertAllowedValues(
+    @Param("projectId") projectId: string,
+    @Body()
+    body: {
+      items: {
+        levelKey: string;
+        code: string;
+        name?: string | null;
+        sortIndex?: number;
+        isActive?: boolean;
+      }[];
+    },
+  ) {
+    const items = body?.items ?? [];
+    if (!Array.isArray(items)) throw new BadRequestException("items must be an array");
+    return this.service.bulkUpsertAllowedValues(projectId, items);
+  }
+
+  // -----------------------------
+  // Assignments v2 (per livello)
+  // -----------------------------
+
+  @Post("assignments-v2/bulk-get")
+  @UseGuards(ProjectRoleGuard)
+  @ProjectRoles("VIEWER", "EDITOR", "ADMIN", "OWNER")
+  bulkGetAssignmentsV2(
+    @Param("projectId") projectId: string,
+    @Body() body: { modelId: string; guids: string[]; levels?: string[] },
   ) {
     const modelId = String(body?.modelId ?? "").trim();
     if (!modelId) throw new BadRequestException("Missing modelId");
@@ -82,16 +113,30 @@ export class WbsController {
     const guids = body?.guids ?? [];
     if (!Array.isArray(guids)) throw new BadRequestException("guids must be an array");
 
-    return this.service.bulkGetAssignments(projectId, modelId, guids);
+    const levels = body?.levels;
+    if (levels !== undefined && !Array.isArray(levels))
+      throw new BadRequestException("levels must be an array if provided");
+
+    return this.service.bulkGetAssignmentsV2({
+      projectId,
+      modelId,
+      guids,
+      levels,
+    });
   }
 
-
-  @Post("assignments/bulk-set")
+  @Post("assignments-v2/bulk-set")
   @UseGuards(ProjectRoleGuard)
   @ProjectRoles("EDITOR", "ADMIN", "OWNER")
-  bulkSetAssignments(
+  bulkSetAssignmentsV2(
     @Param("projectId") projectId: string,
-    @Body() body: { modelId: string; items: { guid: string; wbsNodeId: string | null }[]; source?: string },
+    @Body()
+    body: {
+      modelId: string;
+      source?: "UI" | "IFC_IMPORT" | "RULE";
+      overwrite?: boolean;
+      items: { guid: string; levelKey: string; code: string | null }[];
+    },
     @Req() req: any,
   ) {
     const modelId = String(body?.modelId ?? "").trim();
@@ -100,12 +145,48 @@ export class WbsController {
     const items = body?.items ?? [];
     if (!Array.isArray(items)) throw new BadRequestException("items must be an array");
 
-    return this.service.bulkSetAssignments({
+    return this.service.bulkSetAssignmentsV2({
       projectId,
       modelId,
+      source: (body?.source ?? "UI") as any,
+      overwrite: typeof body?.overwrite === "boolean" ? body.overwrite : undefined,
       items,
-      source: body?.source ?? "UI",
       changedByUserId: req.user?.id,
     });
   }
+
+    // -----------------------------
+  // Promote INVALID -> VALID (se ora il rawCode è ammesso)
+  // -----------------------------
+
+  @Post("assignments-v2/promote-invalid")
+  @UseGuards(ProjectRoleGuard)
+  @ProjectRoles("EDITOR", "ADMIN", "OWNER")
+  promoteInvalidAssignmentsV2(
+    @Param("projectId") projectId: string,
+    @Body()
+    body: {
+      levelKey: string;
+      modelId?: string; // opzionale: se omesso, promuove su tutti i modelli del progetto
+      dryRun?: boolean; // opzionale: se true, non scrive (solo preview)
+    },
+    @Req() req: any,
+  ) {
+    const levelKey = String(body?.levelKey ?? "").trim();
+    if (!levelKey) throw new BadRequestException("Missing levelKey");
+
+    const modelId = body?.modelId ? String(body.modelId).trim() : undefined;
+    const dryRun = typeof body?.dryRun === "boolean" ? body.dryRun : false;
+    const userId = req.user?.id;
+    if (!userId) throw new BadRequestException("Missing user id");
+
+    return this.service.promoteInvalidAssignmentsV2({
+      projectId,
+      levelKey,
+      modelId,
+      dryRun,
+      changedByUserId: req.user?.id,
+    });
+  }
+
 }

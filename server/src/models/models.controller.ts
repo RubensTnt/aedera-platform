@@ -35,10 +35,17 @@ export class ModelsController {
   @ProjectRoles("VIEWER", "EDITOR", "ADMIN", "OWNER")
   async list(@Param("projectId") projectId: string) {
     const rows = await this.models.list(projectId);
-    return rows.map((m) => ({
-      ...m,
-      url: `/storage/${m.fileKey}`,
-    }));
+    return rows.map((m) => {
+      const fileKey = m.currentVersion?.fileKey ?? null;
+      return {
+        id: m.id,
+        label: m.label,
+        url: fileKey ? `/storage/${fileKey}` : null,
+        currentVersion: m.currentVersion
+          ? { id: m.currentVersion.id, version: m.currentVersion.version, createdAt: m.currentVersion.createdAt }
+          : null,
+      };
+    });
   }
 
   
@@ -71,12 +78,11 @@ export class ModelsController {
     @UploadedFile() file: Express.Multer.File,
     @Body() body: { label?: string },
   ) {
-    const id = file.filename.replace(/\.ifc$/i, "");
-    const fileKey = `projects/${projectId}/models/${id}.ifc`; // relativo sotto /storage
+    const storageId = file.filename.replace(/\.ifc$/i, ""); // id solo per il nome file in storage
+    const fileKey = `projects/${projectId}/models/${storageId}.ifc`;
     const label = body?.label?.trim() || file.originalname;
 
-    const created = await this.models.create({
-      id,
+    const updatedModel = await this.models.uploadNewVersion({
       projectId,
       label,
       fileName: file.originalname,
@@ -85,10 +91,12 @@ export class ModelsController {
     });
 
     return {
-      ...created,
-      url: `/storage/${fileKey}`,
+      id: updatedModel.id,
+      label: updatedModel.label,
+      url: updatedModel.currentVersion?.fileKey ? `/storage/${updatedModel.currentVersion.fileKey}` : null,
     };
   }
+
 
   
   @Post(':modelId/index-elements')
@@ -120,11 +128,13 @@ export class ModelsController {
   ) {
     const removed = await this.models.remove(projectId, modelId);
 
-    // prova a cancellare anche il file
-    const abs = join(process.cwd(), "storage", removed.fileKey);
-    try {
-      if (fs.existsSync(abs)) fs.unlinkSync(abs);
-    } catch {}
+    // cancella tutti i file delle versioni
+    for (const v of removed.versions ?? []) {
+      const abs = join(process.cwd(), "storage", v.fileKey);
+      try {
+        if (fs.existsSync(abs)) fs.unlinkSync(abs);
+      } catch {}
+    }
 
     return removed;
   }

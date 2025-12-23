@@ -931,3 +931,19 @@ export function listAllWbsValues(
   return [...values].sort();
 }
 
+
+export function getLocalIdsByGlobalIds(modelId: string, globalIds: string[]): number[] {
+  const index = modelsIndex.get(modelId);
+  if (!index) return [];
+
+  const wanted = new Set(globalIds.filter(Boolean));
+  if (!wanted.size) return [];
+
+  const out: number[] = [];
+  for (const el of index.elements.values()) {
+    if (el.globalId && wanted.has(el.globalId)) out.push(el.localId);
+  }
+  return out;
+}
+
+

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useCurrentProject, useProjectPermissions } from "@core/projects/ProjectContext";
 import { createSupplier, listSuppliers, updateSupplier, type SupplierDto } from "@core/api/aederaApi";
 

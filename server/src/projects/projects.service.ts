@@ -72,12 +72,12 @@ export class ProjectsService {
       });
 
       await tx.elementParamDefinition.upsert({
-        where: { projectId_key: { projectId: project.id, key: "fornitore" } },
-        update: { type: "SUPPLIER", isMulti: true },
+        where: { projectId_key: { projectId: project.id, key: "fornitoreIds" } },
+        update: { type: "SUPPLIER", isMulti: true, isActive: true },
         create: {
           projectId: project.id,
-          key: "fornitore",
-          label: "Fornitore",
+          key: "fornitoreIds",
+          label: "Fornitori",
           type: "SUPPLIER",
           isMulti: true,
           isActive: true,
@@ -86,7 +86,6 @@ export class ProjectsService {
         },
       });
 
-      
       await tx.elementParamDefinition.upsert({
         where: { projectId_key: { projectId: project.id, key: "tariffaCodice" } },
         update: {},

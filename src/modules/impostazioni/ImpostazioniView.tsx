@@ -3,6 +3,7 @@ import { DatiWbsProfileSettingsPanel } from "./DatiWbsProfileSettingsPanel";
 import { useProjects } from "@core/projects/ProjectContext";
 import type { AederaProject } from "@core/projects/projectTypes";
 import { FornitoriSettingsPanel } from "./FornitoriSettingsPanel";
+import { WbsSettingsPanel } from "./WbsSettingsPanel";
 
 type SettingsTab = "wbs" | "suppliers" | "archived";
 
@@ -72,7 +73,12 @@ export const ImpostazioniView: React.FC = () => {
               <p className="text-xs text-slate-500">
                 Configura il profilo DATI_WBS e le preferenze di mapping.
               </p>
+
               <DatiWbsProfileSettingsPanel />
+
+              <div className="h-px bg-slate-100 my-2" />
+
+              <WbsSettingsPanel />
             </div>
           ) : null}
 
