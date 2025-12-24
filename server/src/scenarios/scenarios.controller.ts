@@ -173,4 +173,17 @@ export class ScenariosController {
     if (!Array.isArray(items)) throw new BadRequestException("items must be an array");
     return this.service.bulkUpsertLines(projectId, versionId, items);
   }
+
+  @Post("lines/:lineId/delete")
+  @UseGuards(ProjectRoleGuard)
+  @ProjectRoles("EDITOR", "ADMIN", "OWNER")
+  deleteLine(
+    @Param("projectId") projectId: string,
+    @Param("lineId") lineId: string,
+  ) {
+    const id = String(lineId ?? "").trim();
+    if (!id) throw new BadRequestException("Missing lineId");
+    return this.service.deleteLine(projectId, id);
+  }
+
 }

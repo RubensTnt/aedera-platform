@@ -862,3 +862,24 @@ export async function bulkUpsertScenarioLines(
   return res.json();
 }
 
+export async function deleteScenarioLine(
+  projectId: string,
+  lineId: string,
+): Promise<{ ok: boolean }> {
+  const res = await fetch(
+    `${API_BASE}/api/projects/${projectId}/scenarios/lines/${lineId}/delete`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    },
+  );
+
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(`deleteScenarioLine failed: ${res.status} ${txt}`);
+  }
+
+  return res.json();
+}

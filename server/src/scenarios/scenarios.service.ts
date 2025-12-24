@@ -397,4 +397,47 @@ export class ScenariosService {
 
     return { created: toCreate.length, updated: toUpdate.length };
   }
+
+  async deleteLine(projectId: string, lineId: string) {
+    const line = await this.prisma.boqLine.findFirst({
+      where: { id: lineId, projectId },
+      select: { id: true, versionId: true, rowType: true },
+    });
+    if (!line) throw new NotFoundException("Line not found");
+
+    const version = await this.prisma.scenarioVersion.findFirst({
+      where: { id: line.versionId, projectId, archivedAt: null },
+      select: { status: true },
+    });
+    if (!version) throw new NotFoundException("Version not found");
+    if (version.status === ScenarioVersionStatus.LOCKED) {
+      throw new ForbiddenException("Version is locked");
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      // 1) stacca eventuali figli (MVP: li riportiamo a root)
+      // uso la relazione, così non dipendiamo da parentLineId scalare
+      const children = await tx.boqLine.findMany({
+        where: {
+          projectId,
+          versionId: line.versionId,
+          parentLine: { is: { id: line.id } },
+        },
+        select: { id: true },
+      });
+
+      for (const ch of children) {
+        await tx.boqLine.update({
+          where: { id: ch.id },
+          data: { parentLine: { disconnect: true } },
+        });
+      }
+
+      // 2) elimina la riga
+      await tx.boqLine.delete({ where: { id: line.id } });
+    });
+
+    return { ok: true };
+  }
+
 }

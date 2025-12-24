@@ -9,6 +9,7 @@ import {
   listScenarioVersions,
   listWbsLevels,
   setActiveScenarioVersion,
+  deleteScenarioLine,
   type BoqLineDto,
   type ScenarioVersionDto,
   type ScenarioVersionStatus,
@@ -388,6 +389,53 @@ export const GareView: React.FC = () => {
     );
   };
 
+  const onDeleteLine = async (lineId: string) => {
+    if (!selectedVersionId) return;
+    if (!canEdit) return;
+
+    const line = lines.find((x) => x.id === lineId);
+    if (!line) return;
+
+    const label = (line.description ?? line.tariffaCodice ?? "riga").toString();
+    const ok = window.confirm(`Eliminare questa riga?\n\n${label}`);
+    if (!ok) return;
+
+    // Caso 1: riga non salvata (new_) => rimuovi localmente
+    if (lineId.startsWith("new_")) {
+      setLines((prev) => {
+        // 1) rimuovi la riga
+        const removed = prev.filter((x) => x.id !== lineId);
+        // 2) se era un gruppo, stacca i figli che puntavano a lui
+        return removed.map((x) => {
+          if (x.parentLineId === lineId) {
+            return { ...x, parentLineId: null, _dirty: true };
+          }
+          return x;
+        });
+      });
+      return;
+    }
+
+    // Caso 2: riga salvata => server + reload
+    try {
+      await deleteScenarioLine(projectId, lineId);
+      await loadLines(projectId, selectedVersionId);
+    } catch (e) {
+      console.error(e);
+      setErr("Errore durante l'eliminazione della riga.");
+    }
+  };
+
+  const discardChanges = async () => {
+    if (!selectedVersionId) return;
+    if (dirtyCount === 0) return;
+
+    const ok = window.confirm("Scartare tutte le modifiche non salvate?");
+    if (!ok) return;
+
+    await loadLines(projectId, selectedVersionId);
+  };
+
   const save = async () => {
     if (!selectedVersionId) return;
     if (!canEdit) return;
@@ -661,6 +709,20 @@ export const GareView: React.FC = () => {
 
           <button
             type="button"
+            onClick={() => void discardChanges()}
+            disabled={!selectedVersionId || !canEdit || dirtyCount === 0}
+            className={[
+              "px-2 py-1 rounded border text-xs",
+              dirtyCount === 0
+                ? "border-slate-200 bg-slate-100 text-slate-400"
+                : "border-slate-200 bg-white hover:bg-slate-50 text-slate-700",
+            ].join(" ")}
+          >
+            Annulla modifiche
+          </button>
+
+          <button
+            type="button"
             onClick={() => void save()}
             disabled={!selectedVersionId || !canEdit || saving || dirtyCount === 0}
             className={[
@@ -699,6 +761,7 @@ export const GareView: React.FC = () => {
                 <th className="text-right font-semibold text-slate-600 px-2 py-2 whitespace-nowrap">Qty</th>
                 <th className="text-right font-semibold text-slate-600 px-2 py-2 whitespace-nowrap">Prezzo</th>
                 <th className="text-right font-semibold text-slate-600 px-2 py-2 whitespace-nowrap">Importo</th>
+                <th className="text-center font-semibold text-slate-600 px-2 py-2 whitespace-nowrap">Azioni</th>
               </tr>
             </thead>
             <tbody>
@@ -825,6 +888,18 @@ export const GareView: React.FC = () => {
 
                     <td className="px-2 py-1 align-top text-right font-semibold text-slate-800 whitespace-nowrap">
                       {isGroup ? fmtMoney(groupTotalCache.get(l.id) ?? 0) : fmtMoney(toNumber(l.amount))}
+                    </td>
+
+                    <td className="px-2 py-1 align-top text-center">
+                      <button
+                        type="button"
+                        className="px-2 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50 text-xs"
+                        onClick={() => void onDeleteLine(l.id)}
+                        disabled={!canEdit}
+                        title="Elimina riga"
+                      >
+                        🗑️
+                      </button>
                     </td>
                   </tr>
                 );
