@@ -682,3 +682,179 @@ export async function listScenarios(projectId: string) {
   if (!res.ok) throw new Error(`listScenarios failed: ${res.status}`);
   return res.json() as Promise<EconomicScenarioDto[]>;
 }
+
+export type ScenarioType = "GARA" | "PRIMA_STESURA" | "COSTI" | "FORECAST";
+export type ScenarioVersionStatus = "DRAFT" | "LOCKED";
+export type QtySource = "MANUAL" | "MODEL" | "MODEL_PLUS_MARGIN" | "IMPORT";
+
+export type ScenarioVersionDto = {
+  id: string;
+  projectId: string;
+  scenario: ScenarioType;
+  versionNo: number;
+  status: ScenarioVersionStatus;
+  name?: string | null;
+  notes?: string | null;
+  derivedFromVersionId?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  lockedAt?: string | null;
+  archivedAt?: string | null;
+};
+
+export type BoqLineDto = {
+  id: string;
+  projectId: string;
+  versionId: string;
+
+  wbsKey: string;
+  wbs: Record<string, string>;
+
+  tariffaCodice: string;
+  description?: string | null;
+  uom?: string | null;
+
+  qty: number;
+  unitPrice: number;
+  amount: number;
+
+  qtyModelSuggested?: number | null;
+  qtySource: QtySource;
+  marginPct?: number | null;
+
+  pacchettoCodice?: string | null;
+  materialeCodice?: string | null;
+  fornitoreId?: string | null;
+};
+
+export async function listScenarioVersions(projectId: string, scenario: ScenarioType, includeArchived?: boolean) {
+  const qs = new URLSearchParams({
+    scenario,
+    ...(includeArchived ? { includeArchived: "true" } : {}),
+  });
+
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/scenarios/versions?${qs.toString()}`, {
+    method: "GET",
+    credentials: "include",
+  });
+
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(`listScenarioVersions failed: ${res.status} ${txt}`);
+  }
+
+  return res.json();
+}
+
+export async function createScenarioVersion(
+  projectId: string,
+  payload: { scenario: ScenarioType; name?: string; notes?: string },
+): Promise<ScenarioVersionDto> {
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/scenarios/versions`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(`createScenarioVersion failed: ${res.status}`);
+  return res.json();
+}
+
+export async function cloneScenarioVersion(
+  projectId: string,
+  versionId: string,
+  payload?: { name?: string; notes?: string },
+): Promise<ScenarioVersionDto> {
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/scenarios/versions/${versionId}/clone`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload ?? {}),
+  });
+  if (!res.ok) throw new Error(`cloneScenarioVersion failed: ${res.status}`);
+  return res.json();
+}
+
+export async function freezeScenarioVersion(projectId: string, versionId: string): Promise<{ ok: true }> {
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/scenarios/versions/${versionId}/freeze`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(`freezeScenarioVersion failed: ${res.status}`);
+  return res.json();
+}
+
+export async function archiveScenarioVersion(projectId: string, versionId: string): Promise<{ ok: true }> {
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/scenarios/versions/${versionId}/archive`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(`archiveScenarioVersion failed: ${res.status}`);
+  return res.json();
+}
+
+export async function restoreScenarioVersion(projectId: string, versionId: string): Promise<{ ok: true }> {
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/scenarios/versions/${versionId}/restore`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(`restoreScenarioVersion failed: ${res.status}`);
+  return res.json();
+}
+
+export async function setActiveScenarioVersion(projectId: string, versionId: string): Promise<{ ok: true }> {
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/scenarios/versions/${versionId}/set-active`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(`setActiveScenarioVersion failed: ${res.status}`);
+  return res.json();
+}
+
+export async function listScenarioLines(
+  projectId: string,
+  versionId: string,
+): Promise<{ versionStatus: ScenarioVersionStatus; items: BoqLineDto[] }> {
+  const qs = new URLSearchParams({ versionId });
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/scenarios/lines?${qs.toString()}`, {
+    method: "GET",
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(`listScenarioLines failed: ${res.status}`);
+  return res.json();
+}
+
+export async function bulkUpsertScenarioLines(
+  projectId: string,
+  payload: {
+    versionId: string;
+    items: Array<{
+      id?: string;
+      wbs: Record<string, string>;
+      tariffaCodice: string;
+      description?: string | null;
+      uom?: string | null;
+      qty?: number;
+      unitPrice?: number;
+      qtyModelSuggested?: number | null;
+      qtySource?: QtySource;
+      marginPct?: number | null;
+      pacchettoCodice?: string | null;
+      materialeCodice?: string | null;
+      fornitoreId?: string | null;
+    }>;
+  },
+): Promise<{ created: number; updated: number }> {
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/scenarios/lines/bulk-upsert`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(`bulkUpsertScenarioLines failed: ${res.status} ${txt}`);
+  }
+  return res.json();
+}
+

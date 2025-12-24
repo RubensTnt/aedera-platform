@@ -42,7 +42,8 @@ export class ProjectsService {
           code: body.code ?? null,
         },
       });
-
+      
+      // Add creator as OWNER
       await tx.projectMember.upsert({
         where: {
           projectId_userId: { projectId: project.id, userId },

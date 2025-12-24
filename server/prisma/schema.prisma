@@ -15,23 +15,28 @@ datasource db {
 //
 
 model Project {
-  id         String   @id @default(cuid())
+  id         String    @id @default(cuid())
   name       String
-  code       String?  @unique
-  createdAt  DateTime @default(now())
+  code       String?   @unique
+  createdAt  DateTime  @default(now())
   archivedAt DateTime?
 
-  ifcModels IfcModel[]
-  members  ProjectMember[]
-  wbsLevelSettings WbsLevelSetting[]
-  wbsAllowedValues WbsAllowedValue[]
-  wbsAssignments WbsAssignment[]
+  ifcModels            IfcModel[]
+  members              ProjectMember[]
+  wbsLevelSettings     WbsLevelSetting[]
+  wbsAllowedValues     WbsAllowedValue[]
+  wbsAssignments       WbsAssignment[]
   wbsAssignmentHistory WbsAssignmentHistory[]
-  suppliers Supplier[]
+  suppliers            Supplier[]
+
+  scenarioVersions       ScenarioVersion[]
+  scenarioActiveVersions ScenarioActiveVersion[]
+  boqLines               BoqLine[]
 
   paramDefs    ElementParamDefinition[]
   paramValues  ElementParamValue[]
   paramHistory ElementParamHistory[]
+
   @@index([code])
 }
 
@@ -45,8 +50,12 @@ model User {
   sessions    Session[]
   memberships ProjectMember[]
 
-  elementParamHistory ElementParamHistory[]
+  elementParamHistory  ElementParamHistory[]
   wbsAssignmentHistory WbsAssignmentHistory[]
+
+  scenarioVersionsCreated  ScenarioVersion[] @relation("ScenarioCreatedBy")
+  scenarioVersionsLocked   ScenarioVersion[] @relation("ScenarioLockedBy")
+  scenarioVersionsArchived ScenarioVersion[] @relation("ScenarioArchivedBy")
 
   platformRole PlatformRole @default(USER)
 }
@@ -93,20 +102,20 @@ enum ProjectRole {
 //
 
 model IfcModel {
-  id        String   @id @default(uuid())
+  id        String  @id @default(uuid())
   projectId String
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   label     String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   // Versioning
-  currentVersionId String? @unique
-  currentVersion   IfcModelVersion? @relation("CurrentVersion", fields: [currentVersionId], references: [id])
+  currentVersionId String?           @unique
+  currentVersion   IfcModelVersion?  @relation("CurrentVersion", fields: [currentVersionId], references: [id])
   versions         IfcModelVersion[] @relation("ModelVersions")
 
-  elements        ModelElement[]
+  elements       ModelElement[]
   wbsAssignments WbsAssignment[]
 
   @@unique([projectId, label])
@@ -115,10 +124,10 @@ model IfcModel {
 }
 
 model IfcModelVersion {
-  id        String   @id @default(uuid())
+  id String @id @default(uuid())
 
-  modelId   String
-  model     IfcModel @relation("ModelVersions", fields: [modelId], references: [id], onDelete: Cascade)
+  modelId    String
+  model      IfcModel  @relation("ModelVersions", fields: [modelId], references: [id], onDelete: Cascade)
   currentFor IfcModel? @relation("CurrentVersion")
 
   version   Int
@@ -132,17 +141,17 @@ model IfcModelVersion {
 }
 
 model ModelElement {
-  id       String @id @default(cuid())
+  id String @id @default(cuid())
 
-  modelId  String
-  model    IfcModel @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  modelId String
+  model   IfcModel @relation(fields: [modelId], references: [id], onDelete: Cascade)
 
-  guid     String   // IfcGlobalId
+  guid String // IfcGlobalId
 
-  ifcType   String
-  name      String?
-  typeName  String?
-  category  String?
+  ifcType  String
+  name     String?
+  typeName String?
+  category String?
 
   createdAt DateTime @default(now())
 
@@ -159,14 +168,13 @@ model ModelElement {
 // --------------------
 //
 
-
 model WbsLevelSetting {
   id        String  @id @default(cuid())
   projectId String
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   // es. "WBS0", "WBS6" (chiave logica del livello)
-  levelKey  String
+  levelKey String
 
   enabled   Boolean @default(true)
   required  Boolean @default(false)
@@ -238,10 +246,9 @@ model WbsAssignmentHistory {
   projectId String
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
-  modelId String
-  guid    String
+  modelId  String
+  guid     String
   levelKey String
-
 
   assignmentId String?
   assignment   WbsAssignment? @relation(fields: [assignmentId], references: [id], onDelete: SetNull)
@@ -256,16 +263,14 @@ model WbsAssignmentHistory {
   newRawCode String?
 
   changedByUserId String
-  changedBy       User @relation(fields: [changedByUserId], references: [id], onDelete: Restrict)
+  changedBy       User   @relation(fields: [changedByUserId], references: [id], onDelete: Restrict)
 
   source    WbsAssignmentSource @default(UI)
-  changedAt DateTime @default(now())
+  changedAt DateTime            @default(now())
 
   @@index([projectId, modelId, guid, levelKey, changedAt])
   @@index([projectId, levelKey, changedAt])
 }
-
-
 
 model Supplier {
   id        String  @id @default(cuid())
@@ -285,11 +290,106 @@ model Supplier {
 
 //
 // --------------------
-// Domain view per element (WBS assignment persisted)
+// Domain Scenarios
 // --------------------
 //
 
+model ScenarioVersion {
+  id        String  @id @default(cuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
+  scenario  ScenarioType
+  versionNo Int
+  status    ScenarioVersionStatus @default(DRAFT)
+
+  name  String?
+  notes String?
+
+  derivedFromVersionId String?
+  derivedFrom          ScenarioVersion?  @relation("ScenarioDerivedFrom", fields: [derivedFromVersionId], references: [id], onDelete: SetNull)
+  derivedTo            ScenarioVersion[] @relation("ScenarioDerivedFrom")
+
+  createdByUserId String?
+  createdBy       User?   @relation("ScenarioCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  lockedAt       DateTime?
+  lockedByUserId String?
+  lockedBy       User?     @relation("ScenarioLockedBy", fields: [lockedByUserId], references: [id], onDelete: SetNull)
+
+  archivedAt       DateTime?
+  archivedByUserId String?
+  archivedBy       User?     @relation("ScenarioArchivedBy", fields: [archivedByUserId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lines          BoqLine[]
+  activePointers ScenarioActiveVersion[]
+
+  @@unique([projectId, scenario, versionNo])
+  @@index([projectId, scenario, status])
+  @@index([projectId, scenario, archivedAt])
+}
+
+model ScenarioActiveVersion {
+  id        String  @id @default(cuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  scenario ScenarioType
+
+  versionId String
+  version   ScenarioVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  updatedAt DateTime @updatedAt
+
+  @@unique([projectId, scenario])
+  @@index([projectId, versionId])
+}
+
+model BoqLine {
+  id        String  @id @default(cuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  versionId String
+  version   ScenarioVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  // deterministica: contiene solo i livelli required (es: "WBS0=...|WBS6=...|...")
+  wbsKey String
+  // oggetto con valori per livello (es: {"WBS0":"..","WBS6":".."})
+  wbs    Json
+
+  tariffaCodice String
+  description   String?
+  uom           String?
+
+  qty       Float @default(0)
+  unitPrice Float @default(0)
+  amount    Float @default(0)
+
+  qtyModelSuggested Float?
+  qtySource         QtySource @default(MANUAL)
+  marginPct         Float?
+
+  pacchettoCodice String?
+  materialeCodice String?
+  fornitoreId     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([projectId, versionId])
+  @@index([projectId, versionId, wbsKey])
+  @@index([projectId, versionId, tariffaCodice])
+}
+
+//
+// --------------------
+// Domain view per element (WBS assignment persisted)
+// --------------------
+//
 
 //
 // --------------------
@@ -318,6 +418,24 @@ enum WbsAssignmentSource {
   RULE
 }
 
+enum ScenarioType {
+  GARA
+  PRIMA_STESURA
+  COSTI
+  FORECAST
+}
+
+enum ScenarioVersionStatus {
+  DRAFT
+  LOCKED
+}
+
+enum QtySource {
+  MANUAL
+  MODEL
+  MODEL_PLUS_MARGIN
+  IMPORT
+}
 
 model ElementParamDefinition {
   id        String  @id @default(cuid())
@@ -383,7 +501,7 @@ model ElementParamHistory {
   newValueJson Json?
 
   changedByUserId String
-  changedBy       User @relation(fields: [changedByUserId], references: [id], onDelete: Restrict)
+  changedBy       User   @relation(fields: [changedByUserId], references: [id], onDelete: Restrict)
 
   source    String   @default("UI")
   changedAt DateTime @default(now())

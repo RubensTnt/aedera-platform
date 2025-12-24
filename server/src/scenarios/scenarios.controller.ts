@@ -1,11 +1,11 @@
-/* import {
+import {
   BadRequestException,
   Body,
   Controller,
   Get,
   Param,
   Post,
-  Put,
+  Query,
   Req,
   UseGuards,
 } from "@nestjs/common";
@@ -19,82 +19,154 @@ import { ScenariosService } from "./scenarios.service";
 export class ScenariosController {
   constructor(private readonly service: ScenariosService) {}
 
-  @Get("")
+  // -------- Versions --------
+
+  @Get("versions")
   @UseGuards(ProjectRoleGuard)
   @ProjectRoles("VIEWER", "EDITOR", "ADMIN", "OWNER")
-  list(@Param("projectId") projectId: string) {
-    return this.service.list(projectId);
+  listVersions(
+    @Param("projectId") projectId: string,
+    @Query("scenario") scenario: string,
+    @Query("includeArchived") includeArchived?: string,
+  ) {
+    const sc = String(scenario ?? "").trim();
+    if (!sc) throw new BadRequestException("Missing scenario");
+    const inc = includeArchived === "true";
+    return this.service.listVersions(projectId, sc, inc);
   }
 
-  @Post("")
+  @Post("versions")
   @UseGuards(ProjectRoleGuard)
   @ProjectRoles("EDITOR", "ADMIN", "OWNER")
-  create(
+  createVersion(
     @Param("projectId") projectId: string,
-    @Body() body: { type: string; name: string },
+    @Body() body: { scenario: string; name?: string; notes?: string },
     @Req() req: any,
   ) {
-    if (!body?.type || !body?.name) throw new BadRequestException("Missing type/name");
-    return this.service.create({
+    const scenario = String(body?.scenario ?? "").trim();
+    if (!scenario) throw new BadRequestException("Missing scenario");
+    return this.service.createVersion({
       projectId,
-      type: body.type,
-      name: body.name,
-      createdByUserId: req.user?.id,
+      scenario,
+      name: body?.name,
+      notes: body?.notes,
+      userId: req.user?.id,
     });
   }
 
-  @Get(":scenarioId")
-  @UseGuards(ProjectRoleGuard)
-  @ProjectRoles("VIEWER", "EDITOR", "ADMIN", "OWNER")
-  get(
-    @Param("projectId") projectId: string,
-    @Param("scenarioId") scenarioId: string,
-  ) {
-    return this.service.get(projectId, scenarioId);
-  }
-
-  @Post(":scenarioId/items/bulk-get")
-  @UseGuards(ProjectRoleGuard)
-  @ProjectRoles("VIEWER", "EDITOR", "ADMIN", "OWNER")
-  bulkGetItems(
-    @Param("projectId") projectId: string,
-    @Param("scenarioId") scenarioId: string,
-    @Body() body: { globalIds?: string[] },
-  ) {
-    return this.service.bulkGetItems(projectId, scenarioId, body?.globalIds ?? []);
-  }
-
-  @Put(":scenarioId/items/bulk-set")
+  @Post("versions/:versionId/clone")
   @UseGuards(ProjectRoleGuard)
   @ProjectRoles("EDITOR", "ADMIN", "OWNER")
-  bulkSetItems(
+  cloneVersion(
     @Param("projectId") projectId: string,
-    @Param("scenarioId") scenarioId: string,
+    @Param("versionId") versionId: string,
+    @Body() body: { name?: string; notes?: string },
+    @Req() req: any,
+  ) {
+    return this.service.cloneVersion({
+      projectId,
+      versionId,
+      name: body?.name,
+      notes: body?.notes,
+      userId: req.user?.id,
+    });
+  }
+
+  @Post("versions/:versionId/freeze")
+  @UseGuards(ProjectRoleGuard)
+  @ProjectRoles("ADMIN", "OWNER")
+  freezeVersion(
+    @Param("projectId") projectId: string,
+    @Param("versionId") versionId: string,
+    @Req() req: any,
+  ) {
+    const userId = req.user?.id;
+    if (!userId) throw new BadRequestException("Missing user id");
+    return this.service.freezeVersion({ projectId, versionId, userId });
+  }
+
+  @Post("versions/:versionId/archive")
+  @UseGuards(ProjectRoleGuard)
+  @ProjectRoles("ADMIN", "OWNER")
+  archiveVersion(
+    @Param("projectId") projectId: string,
+    @Param("versionId") versionId: string,
+    @Req() req: any,
+  ) {
+    const userId = req.user?.id;
+    if (!userId) throw new BadRequestException("Missing user id");
+    return this.service.setArchived({ projectId, versionId, archived: true, userId });
+  }
+
+  @Post("versions/:versionId/restore")
+  @UseGuards(ProjectRoleGuard)
+  @ProjectRoles("ADMIN", "OWNER")
+  restoreVersion(
+    @Param("projectId") projectId: string,
+    @Param("versionId") versionId: string,
+    @Req() req: any,
+  ) {
+    const userId = req.user?.id;
+    if (!userId) throw new BadRequestException("Missing user id");
+    return this.service.setArchived({ projectId, versionId, archived: false, userId });
+  }
+
+  @Post("versions/:versionId/set-active")
+  @UseGuards(ProjectRoleGuard)
+  @ProjectRoles("EDITOR", "ADMIN", "OWNER")
+  setActive(
+    @Param("projectId") projectId: string,
+    @Param("versionId") versionId: string,
+  ) {
+    return this.service.setActiveVersion({ projectId, versionId });
+  }
+
+  // -------- Lines --------
+
+  @Get("lines")
+  @UseGuards(ProjectRoleGuard)
+  @ProjectRoles("VIEWER", "EDITOR", "ADMIN", "OWNER")
+  listLines(
+    @Param("projectId") projectId: string,
+    @Query("versionId") versionId: string,
+  ) {
+    const vid = String(versionId ?? "").trim();
+    if (!vid) throw new BadRequestException("Missing versionId");
+    return this.service.listLines(projectId, vid);
+  }
+
+  @Post("lines/bulk-upsert")
+  @UseGuards(ProjectRoleGuard)
+  @ProjectRoles("EDITOR", "ADMIN", "OWNER")
+  bulkUpsertLines(
+    @Param("projectId") projectId: string,
     @Body()
     body: {
-      items: {
-        globalId: string;
-        qty?: string | number | null;
-        unit?: string | null;
-        unitPrice?: string | number | null;
-        amount?: string | number | null;
-        qtySource?: string;
-        notes?: string | null;
-      }[];
-      source?: string;
+      versionId: string;
+      items: Array<{
+        id?: string;
+        wbs: Record<string, string>;
+        tariffaCodice: string;
+        description?: string | null;
+        uom?: string | null;
+
+        qty?: number;
+        unitPrice?: number;
+
+        qtyModelSuggested?: number | null;
+        qtySource?: "MANUAL" | "MODEL" | "MODEL_PLUS_MARGIN" | "IMPORT";
+        marginPct?: number | null;
+
+        pacchettoCodice?: string | null;
+        materialeCodice?: string | null;
+        fornitoreId?: string | null;
+      }>;
     },
-    @Req() req: any,
   ) {
+    const versionId = String(body?.versionId ?? "").trim();
+    if (!versionId) throw new BadRequestException("Missing versionId");
     const items = body?.items ?? [];
     if (!Array.isArray(items)) throw new BadRequestException("items must be an array");
-
-    return this.service.bulkSetItems({
-      projectId,
-      scenarioId,
-      items,
-      changedByUserId: req.user?.id,
-      source: body?.source ?? "UI",
-    });
+    return this.service.bulkUpsertLines(projectId, versionId, items);
   }
 }
- */

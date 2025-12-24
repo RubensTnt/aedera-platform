@@ -6,7 +6,7 @@ import { AuthModule } from "./auth/auth.module";
 import { ElementParamsModule } from "./element-params/element-params.module";
 import { SuppliersModule } from "./suppliers/suppliers.module";
 import { WbsModule } from "./wbs/wbs.module";
-// import { ScenariosModule } from "./scenarios/scenarios.module";
+import { ScenariosModule } from "./scenarios/scenarios.module";
 
 @Module({
   imports: [
@@ -17,7 +17,7 @@ import { WbsModule } from "./wbs/wbs.module";
     ElementParamsModule,
     SuppliersModule,
     WbsModule,
-    // ScenariosModule,
+    ScenariosModule,
   ],
 })
 export class AppModule {}

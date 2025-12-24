@@ -26,7 +26,7 @@ export const AppRoutes: React.FC = () => {
       <LoginPage
         onLoggedIn={async () => {
           await reloadProjects();
-          window.location.href = "/progettazione";
+          window.location.href = "/modelli";
         }}
       />
     );
@@ -54,7 +54,7 @@ export const AppRoutes: React.FC = () => {
             <RequireAuth>
               <AppLayout>
                 <Routes>
-                  <Route path="/" element={<Navigate to="/progettazione" replace />} />
+                  <Route path="/" element={<Navigate to="/modelli" replace />} />
                   <Route path="/modelli" element={<ModelliView />} />
                   <Route path="/progettazione" element={<ProgettazioneView />} />
                   <Route path="/parametri-bim" element={<BimMappingImportView />} />

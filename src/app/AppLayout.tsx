@@ -17,10 +17,11 @@ type NavItem = {
 
 const PRIMARY_NAV: NavItem[] = [
   { label: "Modelli", path: "/modelli" },
-  { label: "Progettazione", path: "/progettazione" },
   { label: "Parametri BIM", path: "/parametri-bim" },
+  { label: "Gara", path: "/gare" },
   { label: "Computo & Quantità", path: "/contabilita" },
   { label: "Programmazione", path: "/programmazione" },
+  { label: "Progettazione", path: "/progettazione" },
 ];
 
 const SECONDARY_NAV: NavItem[] = [
