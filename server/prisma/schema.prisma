@@ -95,6 +95,11 @@ enum ProjectRole {
   VIEWER
 }
 
+enum BoqRowType {
+  LINE
+  GROUP
+}
+
 //
 // --------------------
 // IFC Models & Elements (MIN METADATA)
@@ -349,16 +354,21 @@ model ScenarioActiveVersion {
 }
 
 model BoqLine {
-  id        String  @id @default(cuid())
+  id        String @id @default(cuid())
   projectId String
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   versionId String
   version   ScenarioVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
 
-  // deterministica: contiene solo i livelli required (es: "WBS0=...|WBS6=...|...")
+  rowType   BoqRowType @default(LINE)
+  sortIndex Int        @default(0)
+
+  parentLineId String?
+  parentLine   BoqLine? @relation("BoqLineTree", fields: [parentLineId], references: [id], onDelete: SetNull)
+  children     BoqLine[] @relation("BoqLineTree")
+
   wbsKey String
-  // oggetto con valori per livello (es: {"WBS0":"..","WBS6":".."})
   wbs    Json
 
   tariffaCodice String
@@ -381,6 +391,8 @@ model BoqLine {
   updatedAt DateTime @updatedAt
 
   @@index([projectId, versionId])
+  @@index([projectId, versionId, sortIndex])
+  @@index([projectId, versionId, parentLineId])
   @@index([projectId, versionId, wbsKey])
   @@index([projectId, versionId, tariffaCodice])
 }

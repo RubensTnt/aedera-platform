@@ -718,6 +718,10 @@ export type BoqLineDto = {
   unitPrice: number;
   amount: number;
 
+  rowType: "LINE" | "GROUP";
+  sortIndex: number;
+  parentLineId?: string | null;
+
   qtyModelSuggested?: number | null;
   qtySource: QtySource;
   marginPct?: number | null;

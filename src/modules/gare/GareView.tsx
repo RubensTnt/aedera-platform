@@ -57,6 +57,8 @@ export const GareView: React.FC = () => {
   const [cloning, setCloning] = useState(false);
   const [settingActive, setSettingActive] = useState(false);
 
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+
   const selectedVersion = useMemo(
     () => versions.find((v) => v.id === selectedVersionId) ?? null,
     [versions, selectedVersionId],
@@ -69,6 +71,105 @@ export const GareView: React.FC = () => {
   const totalAmount = useMemo(() => {
     return lines.reduce((sum, l) => sum + toNumber(l.amount), 0);
   }, [lines]);
+
+  type FlatRow = { line: EditableLine; depth: number };
+
+  const groups = useMemo(() => lines.filter((l) => l.rowType === "GROUP"), [lines]);
+
+  const groupOptions = useMemo(
+    () =>
+      groups
+        .slice()
+        .sort((a, b) => (a.sortIndex ?? 0) - (b.sortIndex ?? 0))
+        .map((g) => ({
+          id: g.id,
+          label: `${(g.tariffaCodice ?? "").trim() || "—"} · ${(g.description ?? "").trim() || "Gruppo"}`,
+        })),
+    [groups],
+  );
+
+  const childrenByParentId = useMemo(() => {
+    const m: Record<string, EditableLine[]> = {};
+    for (const l of lines) {
+      const pid = l.parentLineId ?? "__root__";
+      (m[pid] ??= []).push(l);
+    }
+    // ordina i children
+    for (const k of Object.keys(m)) {
+      m[k].sort((a, b) => (a.sortIndex ?? 0) - (b.sortIndex ?? 0));
+    }
+    return m;
+  }, [lines]);
+
+  const groupTotalCache = useMemo(() => {
+    const cache = new Map<string, number>();
+
+    const sumGroup = (groupId: string): number => {
+      if (cache.has(groupId)) return cache.get(groupId)!;
+      const children = childrenByParentId[groupId] ?? [];
+      let sum = 0;
+      for (const c of children) {
+        if (c.rowType === "GROUP") sum += sumGroup(c.id);
+        else sum += toNumber(c.amount);
+      }
+      cache.set(groupId, sum);
+      return sum;
+    };
+
+    for (const g of groups) sumGroup(g.id);
+    return cache;
+  }, [childrenByParentId, groups]);
+
+  const toggleGroup = (groupId: string) => {
+    setExpanded((prev) => ({ ...prev, [groupId]: !(prev[groupId] ?? true) }));
+  };
+
+  const flattenedRows = useMemo<FlatRow[]>(() => {
+    const out: FlatRow[] = [];
+    const visited = new Set<string>();
+
+    const walk = (parentId: string | null, depth: number) => {
+      const key = parentId ?? "__root__";
+      const children = childrenByParentId[key] ?? [];
+
+      for (const child of children) {
+        if (visited.has(child.id)) continue;
+        visited.add(child.id);
+
+        out.push({ line: child, depth });
+
+        if (child.rowType === "GROUP") {
+          const isOpen = expanded[child.id] ?? true;
+          if (isOpen) walk(child.id, depth + 1);
+        }
+      }
+    };
+
+    // root: includiamo anche gruppi e righe senza parentLineId
+    walk(null, 0);
+
+    // safety: appendiamo SOLO righe davvero "orfane" (parent non esistente),
+    // non i figli che sono semplicemente nascosti perché il gruppo è collassato.
+    if (visited.size !== lines.length) {
+      const allIds = new Set(lines.map((x) => x.id));
+
+      const leftovers = lines
+        .filter((l) => {
+          if (visited.has(l.id)) return false;
+          const pid = l.parentLineId;
+          // se non ha parent -> ok append
+          if (!pid) return true;
+          // se ha parent ma il parent non esiste -> ok append
+          return !allIds.has(pid);
+        })
+        .slice()
+        .sort((a, b) => (a.sortIndex ?? 0) - (b.sortIndex ?? 0));
+
+      for (const l of leftovers) out.push({ line: l, depth: 0 });
+    }
+
+    return out;
+  }, [childrenByParentId, expanded, lines]);
 
   async function loadAll(pid: string) {
     setLoading(true);
@@ -177,6 +278,53 @@ export const GareView: React.FC = () => {
     await loadLines(projectId, vid);
   };
 
+  const nextSortIndex = () => {
+    const max = lines.reduce((m, l) => Math.max(m, Number(l.sortIndex ?? 0)), 0);
+    return max + 1;
+  };
+
+  const addGroup = () => {
+    if (!selectedVersionId) return;
+    if (!canEdit) return;
+
+    const blankWbs: Record<string, string> = {};
+    for (const k of requiredWbsKeys) blankWbs[k] = "";
+
+    const tmp: EditableLine = {
+      id: `new_${Math.random().toString(36).slice(2)}`,
+      projectId,
+      versionId: selectedVersionId,
+
+      wbsKey: "",
+      wbs: blankWbs,
+
+      tariffaCodice: "",
+      description: "",
+      uom: "",
+
+      qty: 0,
+      unitPrice: 0,
+      amount: 0,
+
+      rowType: "GROUP",
+      sortIndex: nextSortIndex(),
+      parentLineId: null,
+
+      qtyModelSuggested: null,
+      qtySource: "MANUAL",
+      marginPct: null,
+
+      pacchettoCodice: null,
+      materialeCodice: null,
+      fornitoreId: null,
+
+      _dirty: true,
+      _isNew: true,
+    };
+
+    setLines((prev) => [tmp, ...prev]);
+  };
+
   const addRow = () => {
     if (!selectedVersionId) return;
     if (!canEdit) return;
@@ -196,6 +344,9 @@ export const GareView: React.FC = () => {
       qty: 0,
       unitPrice: 0,
       amount: 0,
+      rowType: "LINE",
+      sortIndex: nextSortIndex(),
+      parentLineId: null,
       qtyModelSuggested: null,
       qtySource: "MANUAL",
       marginPct: null,
@@ -218,7 +369,8 @@ export const GareView: React.FC = () => {
         // keep amount coherent
         const qty = toNumber(next.qty);
         const unitPrice = toNumber(next.unitPrice);
-        next.amount = qty * unitPrice;
+        const isGroup = next.rowType === "GROUP";
+        next.amount = isGroup ? 0 : qty * unitPrice;
         return next;
       }),
     );
@@ -248,16 +400,25 @@ export const GareView: React.FC = () => {
     setErr(null);
     try {
       const items = dirty.map((l) => ({
-        ...(l._isNew ? {} : { id: l.id }),
+        // IMPORTANTISSIMO: manda sempre l'id (anche se è "new_xxx")
+        id: l.id,
+
         wbs: l.wbs ?? {},
         tariffaCodice: String(l.tariffaCodice ?? "").trim(),
         description: l.description ?? null,
         uom: l.uom ?? null,
+
         qty: toNumber(l.qty),
         unitPrice: toNumber(l.unitPrice),
+
+        rowType: l.rowType,
+        sortIndex: typeof l.sortIndex === "number" ? l.sortIndex : 0,
+        parentLineId: l.parentLineId ?? null,
+
         qtyModelSuggested: l.qtyModelSuggested ?? null,
         qtySource: l.qtySource,
         marginPct: l.marginPct ?? null,
+
         pacchettoCodice: l.pacchettoCodice ?? null,
         materialeCodice: l.materialeCodice ?? null,
         fornitoreId: l.fornitoreId ?? null,
@@ -474,6 +635,20 @@ export const GareView: React.FC = () => {
 
           <button
             type="button"
+            onClick={addGroup}
+            disabled={!selectedVersionId || !canEdit}
+            className={[
+              "px-2 py-1 rounded border text-xs",
+              canEdit
+                ? "border-slate-200 bg-white hover:bg-slate-50 text-slate-700"
+                : "border-slate-200 bg-slate-100 text-slate-400",
+            ].join(" ")}
+          >
+            + Gruppo
+          </button>
+
+          <button
+            type="button"
             onClick={addRow}
             disabled={!selectedVersionId || !canEdit}
             className={[
@@ -519,6 +694,7 @@ export const GareView: React.FC = () => {
                 ))}
                 <th className="text-left font-semibold text-slate-600 px-2 py-2 whitespace-nowrap">Tariffa</th>
                 <th className="text-left font-semibold text-slate-600 px-2 py-2">Descrizione</th>
+                <th className="text-left font-semibold text-slate-600 px-2 py-2 whitespace-nowrap">Gruppo</th>
                 <th className="text-left font-semibold text-slate-600 px-2 py-2 whitespace-nowrap">UoM</th>
                 <th className="text-right font-semibold text-slate-600 px-2 py-2 whitespace-nowrap">Qty</th>
                 <th className="text-right font-semibold text-slate-600 px-2 py-2 whitespace-nowrap">Prezzo</th>
@@ -526,10 +702,21 @@ export const GareView: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              {lines.map((l) => {
+              {flattenedRows.map(({ line: l, depth }) => {
+                const isGroup = l.rowType === "GROUP";
+                const isOpen = isGroup ? (expanded[l.id] ?? true) : false;
+                const hasChildren = isGroup ? ((childrenByParentId[l.id]?.length ?? 0) > 0) : false;
+                const indentPx = 12 * depth;
                 const rowMuted = isLocked ? "opacity-80" : "";
                 return (
-                  <tr key={l.id} className={["border-b border-slate-100", rowMuted].join(" ")}>
+                  <tr
+                    key={l.id}
+                    className={[
+                      "border-b border-slate-100",
+                      rowMuted,
+                      isGroup ? "bg-slate-50" : "",
+                    ].join(" ")}
+                  >
                     {requiredWbsKeys.map((k) => (
                       <td key={k} className="px-2 py-1 align-top">
                         <input
@@ -543,13 +730,36 @@ export const GareView: React.FC = () => {
                     ))}
 
                     <td className="px-2 py-1 align-top">
-                      <input
-                        className="w-[120px] rounded border border-slate-200 px-2 py-1"
-                        value={l.tariffaCodice ?? ""}
-                        onChange={(e) => updateLine(l.id, { tariffaCodice: e.target.value })}
-                        disabled={!canEdit}
-                        placeholder="es. A.01.001"
-                      />
+                      <div className="flex items-center gap-1" style={{ paddingLeft: indentPx }}>
+                        {isGroup ? (
+                          <button
+                            type="button"
+                            className={[
+                              "w-6 h-6 flex items-center justify-center rounded border",
+                              hasChildren ? "border-slate-200 bg-white hover:bg-slate-50" : "border-transparent bg-transparent cursor-default",
+                            ].join(" ")}
+                            onClick={() => hasChildren && toggleGroup(l.id)}
+                            title={hasChildren ? (isOpen ? "Collassa" : "Espandi") : "Nessun figlio"}
+                            disabled={!hasChildren}
+                          >
+                            {hasChildren ? (isOpen ? "▾" : "▸") : ""}
+                          </button>
+                        ) : (
+                          <span className="w-6" />
+                        )}
+
+                        <input
+                          className={[
+                            "rounded border px-2 py-1",
+                            isGroup ? "w-[120px] font-semibold" : "w-[120px]",
+                            isGroup ? "border-slate-300 bg-slate-50" : "border-slate-200",
+                          ].join(" ")}
+                          value={l.tariffaCodice ?? ""}
+                          onChange={(e) => updateLine(l.id, { tariffaCodice: e.target.value })}
+                          disabled={!canEdit}
+                          placeholder="es. GC.5"
+                        />
+                      </div>
                     </td>
 
                     <td className="px-2 py-1 align-top">
@@ -560,6 +770,29 @@ export const GareView: React.FC = () => {
                         disabled={!canEdit}
                         placeholder="Descrizione"
                       />
+                    </td>
+
+                    <td className="px-2 py-1 align-top">
+                      {isGroup ? (
+                        <span className="text-[11px] text-slate-400">—</span>
+                      ) : (
+                        <select
+                          className="w-[220px] rounded border border-slate-200 px-2 py-1 bg-white"
+                          value={l.parentLineId ?? ""}
+                          onChange={(e) => updateLine(l.id, { parentLineId: e.target.value || null })}
+                          disabled={!canEdit}
+                        >
+                          <option value="">(Nessun gruppo)</option>
+                          {groupOptions
+                            // evita che una riga possa essere figlia di se stessa (non dovrebbe succedere per LINE, ma safe)
+                            .filter((g) => g.id !== l.id)
+                            .map((g) => (
+                              <option key={g.id} value={g.id}>
+                                {g.label}
+                              </option>
+                            ))}
+                        </select>
+                      )}
                     </td>
 
                     <td className="px-2 py-1 align-top">
@@ -577,7 +810,7 @@ export const GareView: React.FC = () => {
                         className="w-[90px] rounded border border-slate-200 px-2 py-1 text-right"
                         value={String(l.qty ?? 0)}
                         onChange={(e) => updateLine(l.id, { qty: toNumber(e.target.value) })}
-                        disabled={!canEdit}
+                        disabled={!canEdit || isGroup}
                       />
                     </td>
 
@@ -586,12 +819,12 @@ export const GareView: React.FC = () => {
                         className="w-[100px] rounded border border-slate-200 px-2 py-1 text-right"
                         value={String(l.unitPrice ?? 0)}
                         onChange={(e) => updateLine(l.id, { unitPrice: toNumber(e.target.value) })}
-                        disabled={!canEdit}
+                        disabled={!canEdit || isGroup}
                       />
                     </td>
 
                     <td className="px-2 py-1 align-top text-right font-semibold text-slate-800 whitespace-nowrap">
-                      {fmtMoney(toNumber(l.amount))}
+                      {isGroup ? fmtMoney(groupTotalCache.get(l.id) ?? 0) : fmtMoney(toNumber(l.amount))}
                     </td>
                   </tr>
                 );

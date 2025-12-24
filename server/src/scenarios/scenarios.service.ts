@@ -117,6 +117,10 @@ export class ScenariosService {
           unitPrice: l.unitPrice,
           amount: l.amount,
 
+          rowType: l.rowType,
+          sortIndex: l.sortIndex,
+          parentLineId: null, // per MVP: lo azzeriamo e poi lo ricostruiamo lato UI/import
+
           qtyModelSuggested: l.qtyModelSuggested,
           qtySource: l.qtySource,
           marginPct: l.marginPct,
@@ -204,9 +208,20 @@ export class ScenariosService {
     });
     if (!version) throw new NotFoundException("Version not found");
 
-    const items = await this.prisma.boqLine.findMany({
+    const rows = await this.prisma.boqLine.findMany({
       where: { projectId, versionId },
-      orderBy: [{ wbsKey: "asc" }, { tariffaCodice: "asc" }],
+      orderBy: [{ sortIndex: "asc" }, { wbsKey: "asc" }, { tariffaCodice: "asc" }],
+      include: {
+        parentLine: { select: { id: true } },
+      },
+    });
+
+    // rimappo in modo che il frontend riceva sempre parentLineId
+    const items = rows.map((r: any) => {
+      const parentLineId = r.parentLine?.id ?? null;
+      // non vogliamo mandare l’oggetto parentLine al frontend (non serve)
+      const { parentLine, ...rest } = r;
+      return { ...rest, parentLineId };
     });
 
     return { versionStatus: version.status, items };
@@ -245,21 +260,60 @@ export class ScenariosService {
     const requiredKeys = await this.getRequiredWbsKeys(projectId);
 
     // split create/update: per update richiediamo id
-    const toCreate: Prisma.BoqLineCreateManyInput[] = [];
-    const toUpdate: Array<{ id: string; data: Prisma.BoqLineUpdateInput }> = [];
+    type CreateRow = Prisma.BoqLineCreateInput & {
+      __tempId: string;
+      __parentTempId?: string | null;
+    };
+    type UpdateRow = { id: string; data: Prisma.BoqLineUpdateInput };
+
+    const toCreate: CreateRow[] = [];
+    const toUpdate: UpdateRow[] = [];
 
     for (const it of items) {
+      const rowType = (it?.rowType ?? "LINE") as any;
+      const isGroup = rowType === "GROUP";
+
       const wbs = (it?.wbs ?? {}) as Record<string, string>;
-      const wbsKey = this.buildWbsKey(requiredKeys, wbs);
-
       const tariffaCodice = String(it?.tariffaCodice ?? "").trim();
-      if (!tariffaCodice) throw new BadRequestException("tariffaCodice is required");
+      const description = (it?.description ?? null) as string | null;
 
-      const qty = Number.isFinite(Number(it?.qty)) ? Number(it.qty) : 0;
-      const unitPrice = Number.isFinite(Number(it?.unitPrice)) ? Number(it.unitPrice) : 0;
-      const amount = qty * unitPrice;
+      let wbsKey: string;
+
+      if (!isGroup) {
+        wbsKey = this.buildWbsKey(requiredKeys, wbs);
+        if (!tariffaCodice) throw new BadRequestException("tariffaCodice is required");
+      } else {
+        // GROUP: permette WBS incompleto
+        wbsKey =
+          requiredKeys.length
+            ? requiredKeys.map((k) => `${k}=${String(wbs?.[k] ?? "").trim()}`).join("|")
+            : "";
+        if (!tariffaCodice && !description) {
+          throw new BadRequestException("GROUP row requires at least tariffaCodice or description");
+        }
+      }
+
+      if (!isGroup && !tariffaCodice) {
+        throw new BadRequestException("tariffaCodice is required");
+      }
 
       const qtySource = it?.qtySource ? (it.qtySource as QtySource) : QtySource.MANUAL;
+
+      let sortIndex = Number.isFinite(Number(it?.sortIndex)) ? Number(it.sortIndex) : 0;
+      if (sortIndex > 2147483647) sortIndex = 2147483647;
+      if (sortIndex < 0) sortIndex = 0;      
+      
+      const parentLineId = it?.parentLineId ? String(it.parentLineId) : null;
+
+      const parentLineIdRaw = it?.parentLineId ? String(it.parentLineId) : null;
+      const parentTempId =
+        parentLineIdRaw && parentLineIdRaw.startsWith("new_") ? parentLineIdRaw : null;
+      const parentRealId =
+        parentLineIdRaw && !parentLineIdRaw.startsWith("new_") ? parentLineIdRaw : null;
+
+      const qty = isGroup ? 0 : (Number.isFinite(Number(it?.qty)) ? Number(it.qty) : 0);
+      const unitPrice = isGroup ? 0 : (Number.isFinite(Number(it?.unitPrice)) ? Number(it.unitPrice) : 0);
+      const amount = qty * unitPrice;
 
       const common = {
         wbsKey,
@@ -270,6 +324,8 @@ export class ScenariosService {
         qty,
         unitPrice,
         amount,
+        rowType,
+        sortIndex,
         qtyModelSuggested: it?.qtyModelSuggested ?? null,
         qtySource,
         marginPct: it?.marginPct ?? null,
@@ -278,27 +334,64 @@ export class ScenariosService {
         fornitoreId: it?.fornitoreId ?? null,
       };
 
-      if (it?.id) {
-        toUpdate.push({ id: String(it.id), data: common });
-      } else {
-        toCreate.push({
-          projectId,
-          versionId,
+      if (it?.id && !String(it.id).startsWith("new_")) {
+        const data: Prisma.BoqLineUpdateInput = {
           ...common,
-        } as Prisma.BoqLineCreateManyInput);
+          parentLine: parentRealId ? { connect: { id: parentRealId } } : { disconnect: true },
+        };
+        toUpdate.push({ id: String(it.id), data });
+      } else {
+        // create
+        const tempId =
+          typeof it?.id === "string" && it.id.startsWith("new_")
+            ? it.id
+            : `new_${Math.random().toString(36).slice(2)}`;
+
+        toCreate.push({
+          __tempId: tempId,
+          __parentTempId: parentTempId,
+          project: { connect: { id: projectId } },
+          version: { connect: { id: versionId } },
+          ...common,
+        });
       }
     }
 
     // transazione: update uno-a-uno + createMany
     await this.prisma.$transaction(async (tx) => {
-      for (const u of toUpdate) {
-        await tx.boqLine.update({
-          where: { id: u.id },
-          data: u.data,
+      const tempToReal = new Map<string, string>();
+      const pendingFix: Array<{ childRealId: string; parentTempId: string }> = [];
+
+      for (const c of toCreate) {
+        const { __tempId, __parentTempId, ...data } = c as any;
+
+        // NB: se parent è temp, nel create non lo settiamo
+        if (__parentTempId) {
+          delete data.parentLine;
+        }
+
+        const created = await tx.boqLine.create({
+          data: data as Prisma.BoqLineCreateInput,
         });
+
+        tempToReal.set(__tempId, created.id);
+
+        if (__parentTempId) {
+          pendingFix.push({ childRealId: created.id, parentTempId: __parentTempId });
+        }
       }
-      if (toCreate.length) {
-        await tx.boqLine.createMany({ data: toCreate });
+
+      for (const u of toUpdate) {
+        await tx.boqLine.update({ where: { id: u.id }, data: u.data });
+      }
+
+      for (const p of pendingFix) {
+        const realParentId = tempToReal.get(p.parentTempId);
+        if (!realParentId) continue;
+        await tx.boqLine.update({
+          where: { id: p.childRealId },
+          data: { parentLine: { connect: { id: realParentId } } },
+        });
       }
     });
 

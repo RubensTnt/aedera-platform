@@ -152,6 +152,10 @@ export class ScenariosController {
 
         qty?: number;
         unitPrice?: number;
+        
+        rowType?: "LINE" | "GROUP";
+        sortIndex?: number;
+        parentLineId?: string | null;
 
         qtyModelSuggested?: number | null;
         qtySource?: "MANUAL" | "MODEL" | "MODEL_PLUS_MARGIN" | "IMPORT";
