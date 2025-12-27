@@ -15,6 +15,11 @@ import {
   type ScenarioVersionStatus,
 } from "@core/api/aederaApi";
 
+
+
+// ------------------
+// ----- TYPES ------
+// ------------------
 type WbsLevelSettingDto = {
   levelKey: string;
   enabled: boolean;
@@ -26,8 +31,17 @@ type WbsLevelSettingDto = {
 type EditableLine = BoqLineDto & {
   _dirty?: boolean;
   _isNew?: boolean;
+  _deleted?: boolean;
+
+  // per undo “intelligente” quando cancelli un gruppo e stacchi i figli
+  _prevParentLineId?: string | null;
 };
 
+
+
+// ------------------
+// ---- HELPERS -----
+// ------------------
 function fmtMoney(n: number) {
   if (!Number.isFinite(n)) return "0,00";
   return n.toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -38,6 +52,162 @@ function toNumber(v: any) {
   return Number.isFinite(n) ? n : 0;
 }
 
+function csvEscape(v: any) {
+  let s = (v ?? "").toString();
+
+  // IMPORTANT: evita righe multiple dentro una cella (Excel/LibreOffice spesso rompono)
+  s = s.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  s = s.replace(/\n/g, " "); // oppure "⏎" se vuoi vederlo
+
+  // CSV standard: se contiene ; " o tab, racchiudi tra doppi apici e raddoppia i doppi apici
+  if (/[;"\t]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+function downloadTextFile(filename: string, content: string, mime = "text/csv;charset=utf-8") {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function stripBom(s: string) {
+  return s?.replace(/^\uFEFF/, "") ?? "";
+}
+
+function detectDelimiterFromLine(line: string) {
+  const candidates: Array<{ d: string; score: number }> = [
+    { d: ";", score: (line.match(/;/g) ?? []).length },
+    { d: ",", score: (line.match(/,/g) ?? []).length },
+    { d: "\t", score: (line.match(/\t/g) ?? []).length },
+  ];
+  candidates.sort((a, b) => b.score - a.score);
+  return candidates[0].score > 0 ? candidates[0].d : ";";
+}
+
+function parseCsvFlexible(text: string): { headers: string[]; rows: Array<Record<string, string>> } {
+  // normalizza EOL
+  let s = stripBom(String(text ?? "")).replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+
+  // skippa righe vuote iniziali
+  while (s.startsWith("\n")) s = s.slice(1);
+
+  if (!s.trim()) return { headers: [], rows: [] };
+
+  // gestisci sep=;
+  let delimiter: string | null = null;
+  {
+    const firstLineEnd = s.indexOf("\n");
+    const firstLineRaw = firstLineEnd >= 0 ? s.slice(0, firstLineEnd) : s;
+    const firstLine = stripBom(firstLineRaw).trim();
+
+    // accetta anche: "sep=;", sep=;;;;, sep=;,,,, ecc.
+    const m = firstLine.match(/^\s*"?\s*sep\s*=\s*(.)/i);
+
+    if (m) {
+      delimiter = m[1];
+      s = firstLineEnd >= 0 ? s.slice(firstLineEnd + 1) : "";
+      while (s.startsWith("\n")) s = s.slice(1);
+    }
+  }
+
+  // se non c'è sep=, detect sul primo header line "grezzo"
+  if (!delimiter) {
+    const firstLineEnd = s.indexOf("\n");
+    const firstLine = firstLineEnd >= 0 ? s.slice(0, firstLineEnd) : s;
+    delimiter = detectDelimiterFromLine(firstLine);
+  }
+
+  // parse char-by-char (supporta newline in quotes)
+  const grid: string[][] = [];
+  let row: string[] = [];
+  let cur = "";
+  let inQ = false;
+
+  const pushCell = () => {
+    row.push(cur);
+    cur = "";
+  };
+  const pushRow = () => {
+    // evita righe completamente vuote
+    if (row.length === 1 && !row[0].trim()) {
+      row = [];
+      return;
+    }
+    // se la riga ha qualcosa
+    if (row.some((c) => String(c ?? "").length > 0)) grid.push(row);
+    row = [];
+  };
+
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+
+    if (inQ) {
+      if (ch === '"') {
+        const next = s[i + 1];
+        if (next === '"') {
+          cur += '"';
+          i++;
+        } else {
+          inQ = false;
+        }
+      } else {
+        cur += ch; // include anche \n dentro quotes
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inQ = true;
+      continue;
+    }
+
+    if (ch === delimiter) {
+      pushCell();
+      continue;
+    }
+
+    if (ch === "\n") {
+      pushCell();
+      pushRow();
+      continue;
+    }
+
+    cur += ch;
+  }
+
+  // flush finale
+  if (cur.length || row.length) {
+    pushCell();
+    pushRow();
+  }
+
+  // drop righe vuote iniziali (safety)
+  while (grid.length && grid[0].every((c) => !String(c ?? "").trim())) grid.shift();
+
+  if (grid.length < 2) return { headers: [], rows: [] };
+
+  const headers = grid[0].map((h) => stripBom(String(h ?? "")).trim());
+  const rowsArr = grid.slice(1);
+
+  const rows: Array<Record<string, string>> = rowsArr.map((cols) => {
+    const rec: Record<string, string> = {};
+    for (let c = 0; c < headers.length; c++) rec[headers[c]] = String(cols[c] ?? "");
+    return rec;
+  });
+
+  return { headers, rows };
+}
+
+
+// ------------------
+// --- COMPONENT ----
+// ------------------
 export const GareView: React.FC = () => {
   const { currentProjectId } = useProjects();
   const projectId = currentProjectId ?? null;
@@ -58,7 +228,46 @@ export const GareView: React.FC = () => {
   const [cloning, setCloning] = useState(false);
   const [settingActive, setSettingActive] = useState(false);
 
+  const [sortMode, setSortMode] = useState<"SORTINDEX" | "TARIFFA">("TARIFFA");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+
+  const [importing, setImporting] = useState(false);
+  const [importPreview, setImportPreview] = useState<null | {
+    headers: string[];
+    rows: Array<Record<string, string>>;
+    stats: { total: number; groups: number; lines: number; errors: number };
+    errors: string[];
+  }>(null);
+
+  const cmpTariffa = (a: EditableLine, b: EditableLine) => {
+    const ca = (a.tariffaCodice ?? "").trim();
+    const cb = (b.tariffaCodice ?? "").trim();
+
+    // vuoti in fondo
+    if (!ca && cb) return 1;
+    if (ca && !cb) return -1;
+
+    // compare "naturale" (GC.2 < GC.10)
+    const byCode = ca.localeCompare(cb, "it", { numeric: true, sensitivity: "base" });
+    if (byCode !== 0) return byCode;
+
+    // tie-break: descrizione
+    const da = (a.description ?? "").trim();
+    const db = (b.description ?? "").trim();
+    const byDesc = da.localeCompare(db, "it", { numeric: true, sensitivity: "base" });
+    if (byDesc !== 0) return byDesc;
+
+    // ultimo tie-break stabile
+    return (a.id ?? "").localeCompare(b.id ?? "");
+  };
+
+  const cmpSortIndex = (a: EditableLine, b: EditableLine) =>
+    (Number(a.sortIndex ?? 0) - Number(b.sortIndex ?? 0)) ||
+    (a.id ?? "").localeCompare(b.id ?? "");
+
+  const cmpLine = (a: EditableLine, b: EditableLine) =>
+    sortMode === "TARIFFA" ? cmpTariffa(a, b) : cmpSortIndex(a, b);
+
 
   const selectedVersion = useMemo(
     () => versions.find((v) => v.id === selectedVersionId) ?? null,
@@ -67,15 +276,74 @@ export const GareView: React.FC = () => {
 
   const isLocked = selectedVersionStatus === "LOCKED";
 
-  const dirtyCount = useMemo(() => lines.filter((l) => l._dirty || l._isNew).length, [lines]);
+  const onPickCsv = async (file: File) => {
+    if (!selectedVersionId) return;
+
+    const text = await file.text();
+    const parsed = parseCsvFlexible(text);
+
+    if (parsed.headers.length < 1 || parsed.rows.length < 1) {
+      setImportPreview({
+        headers: [],
+        rows: [],
+        stats: { total: 0, groups: 0, lines: 0, errors: 1 },
+        errors: ["CSV vuoto o senza righe dati."],
+      });
+      return;
+    }
+
+    const headers = parsed.headers.map((h: string) => String(h ?? "").trim());
+    const normalizedHeaders = headers.map((h: string) => h.trim());
+
+    const errors: string[] = [];
+
+    // minimo
+    if (!normalizedHeaders.includes("tariffaCodice")) errors.push(`Header mancante: "tariffaCodice"`);
+
+    // WBS richieste
+    for (const k of requiredWbsKeys) {
+      if (!normalizedHeaders.includes(k)) errors.push(`Colonna WBS richiesta mancante: "${k}"`);
+    }
+
+    let groups = 0;
+    let linesCount = 0;
+
+    for (let i = 0; i < parsed.rows.length; i++) {
+      const rec = parsed.rows[i];
+
+      const rt = String(rec["rowType"] ?? "").trim().toUpperCase();
+      const tariffa = String(rec["tariffaCodice"] ?? "").trim();
+      const desc = String(rec["description"] ?? "").trim();
+
+      if (rt === "LINE" && !tariffa) errors.push(`Riga ${i + 2}: tariffaCodice mancante (LINE)`);
+      if (rt === "GROUP" && !tariffa && !desc) errors.push(`Riga ${i + 2}: GROUP richiede tariffaCodice o description`);
+
+      if (rt === "GROUP") groups++;
+      else if (rt === "LINE") linesCount++;
+      else errors.push(`Riga ${i + 2}: rowType non valido (${rec["rowType"]})`);
+    }
+
+    setImportPreview({
+      headers,
+      rows: parsed.rows,
+      stats: { total: parsed.rows.length, groups, lines: linesCount, errors: errors.length },
+      errors,
+    });
+  };
+
+  const dirtyCount = useMemo(
+    () => lines.filter((l) => l._dirty || l._isNew || l._deleted).length,
+    [lines],
+  );
 
   const totalAmount = useMemo(() => {
-    return lines.reduce((sum, l) => sum + toNumber(l.amount), 0);
+    return lines.reduce((sum, l) => sum + (l._deleted ? 0 : toNumber(l.amount)), 0);
   }, [lines]);
 
   type FlatRow = { line: EditableLine; depth: number };
 
-  const groups = useMemo(() => lines.filter((l) => l.rowType === "GROUP"), [lines]);
+  const visibleLines = useMemo(() => lines.filter((l) => !l._deleted), [lines]);
+  const groups = useMemo(() => visibleLines.filter((l) => l.rowType === "GROUP"), [visibleLines]);
 
   const groupOptions = useMemo(
     () =>
@@ -91,13 +359,13 @@ export const GareView: React.FC = () => {
 
   const childrenByParentId = useMemo(() => {
     const m: Record<string, EditableLine[]> = {};
-    for (const l of lines) {
+    for (const l of visibleLines) {
       const pid = l.parentLineId ?? "__root__";
       (m[pid] ??= []).push(l);
     }
     // ordina i children
     for (const k of Object.keys(m)) {
-      m[k].sort((a, b) => (a.sortIndex ?? 0) - (b.sortIndex ?? 0));
+      m[k].sort(cmpLine);
     }
     return m;
   }, [lines]);
@@ -110,6 +378,7 @@ export const GareView: React.FC = () => {
       const children = childrenByParentId[groupId] ?? [];
       let sum = 0;
       for (const c of children) {
+        if (c._deleted) continue;
         if (c.rowType === "GROUP") sum += sumGroup(c.id);
         else sum += toNumber(c.amount);
       }
@@ -172,6 +441,26 @@ export const GareView: React.FC = () => {
     return out;
   }, [childrenByParentId, expanded, lines]);
 
+  const descendantsOf = useMemo(() => {
+    const memo = new Map<string, Set<string>>();
+
+    const walk = (id: string): Set<string> => {
+      if (memo.has(id)) return memo.get(id)!;
+      const out = new Set<string>();
+      const children = childrenByParentId[id] ?? [];
+      for (const c of children) {
+        out.add(c.id);
+        for (const d of walk(c.id)) out.add(d);
+      }
+      memo.set(id, out);
+      return out;
+    };
+
+    for (const g of groups) walk(g.id);
+    return memo;
+  }, [childrenByParentId, groups]);
+  
+
   async function loadAll(pid: string) {
     setLoading(true);
     setErr(null);
@@ -232,6 +521,139 @@ export const GareView: React.FC = () => {
       setLoading(false);
     }
   }
+
+  function looksLikeCuid(id: string) {
+    // Prisma cuid() tipicamente inizia con "c" ed è abbastanza lungo
+    const s = id.trim();
+    return s.length >= 10 && s.startsWith("c");
+  }
+
+  function normalizeImportedId(idRaw: string) {
+    const id = (idRaw ?? "").trim();
+    if (!id) return null;
+    // accettiamo solo id “credibili” (esportati da Aedera); altrimenti li ignoriamo
+    return looksLikeCuid(id) ? id : null;
+  }
+
+  function buildLineFromCsvRow(r: Record<string, string>, fallbackSort: number): EditableLine {
+    const rowType = String(r["rowType"] ?? "LINE").trim().toUpperCase() === "GROUP" ? "GROUP" : "LINE";
+    const isGroup = rowType === "GROUP";
+
+    // sortIndex: se manca usa fallbackSort
+    const sortIndexRaw = String(r["sortIndex"] ?? "").trim();
+    const sortIndex = sortIndexRaw ? toNumber(sortIndexRaw) : fallbackSort;
+
+    const parentLineId = String(r["parentLineId"] ?? "").trim() || null;
+
+    const wbs: Record<string, string> = {};
+    for (const k of requiredWbsKeys) wbs[k] = String(r[k] ?? "").trim();
+
+    const qty = isGroup ? 0 : toNumber(r["qty"]);
+    const unitPrice = isGroup ? 0 : toNumber(r["unitPrice"]);
+    const amount = isGroup ? 0 : qty * unitPrice;
+
+    return {
+      id: "new_tmp", // verrà sostituito dopo
+      projectId: projectId!,
+      versionId: selectedVersionId!,
+
+      wbsKey: "", // lo calcola il server quando salvi
+      wbs,
+
+      tariffaCodice: String(r["tariffaCodice"] ?? "").trim(),
+      description: (String(r["description"] ?? "").trim() || null),
+      uom: (String(r["uom"] ?? "").trim() || null),
+
+      qty,
+      unitPrice,
+      amount,
+
+      rowType,
+      sortIndex,
+      parentLineId,
+
+      qtyModelSuggested: r["qtyModelSuggested"] ? toNumber(r["qtyModelSuggested"]) : null,
+      qtySource: (String(r["qtySource"] ?? "MANUAL").trim().toUpperCase() as any) || "MANUAL",
+      marginPct: r["marginPct"] ? toNumber(r["marginPct"]) : null,
+
+      pacchettoCodice: (String(r["pacchettoCodice"] ?? "").trim() || null),
+      materialeCodice: (String(r["materialeCodice"] ?? "").trim() || null),
+      fornitoreId: (String(r["fornitoreId"] ?? "").trim() || null),
+
+      _dirty: true,
+      _isNew: true,
+    };
+  }
+
+  const applyImport = async () => {
+    if (!projectId || !selectedVersionId || !importPreview) return;
+    if (!canEdit) return;
+
+    const ok = window.confirm(
+      "Applicare l'import in bozza?\nLe modifiche verranno applicate in tabella, ma non saranno salvate finché non premi 'Salva'.",
+    );
+    if (!ok) return;
+
+    setImporting(true);
+    setErr(null);
+
+    try {
+      // indicizziamo le righe esistenti per id
+      const existingById = new Map(lines.map((l) => [l.id, l] as const));
+
+      // per dare sortIndex prevedibile quando mancante
+      let fallbackSort = Math.max(0, ...lines.map((l) => Number(l.sortIndex ?? 0))) + 1;
+
+      const nextLines = [...lines];
+
+      for (const r of importPreview.rows) {
+        const normalizedId = normalizeImportedId(String(r["id"] ?? ""));
+        const imported = buildLineFromCsvRow(r, fallbackSort++);
+        const parentLineId = String(r["parentLineId"] ?? "").trim() || null;
+
+        // assegna id: se arriva id credibile lo usiamo, altrimenti new_
+        const finalId = normalizedId ?? `new_${Math.random().toString(36).slice(2)}`;
+        imported.id = finalId;
+
+        // parentLineId: accettiamo anche se è un id esistente
+        imported.parentLineId = parentLineId;
+
+        const existing = normalizedId ? existingById.get(normalizedId) : undefined;
+
+        if (existing) {
+          // UPDATE in bozza: patch della riga esistente
+          const patched: EditableLine = {
+            ...existing,
+            ...imported,
+            id: existing.id,
+            projectId: existing.projectId,
+            versionId: existing.versionId,
+            _isNew: existing._isNew,
+            _dirty: true,
+          };
+
+          // amount coerente
+          const isGroup = patched.rowType === "GROUP";
+          patched.amount = isGroup ? 0 : toNumber(patched.qty) * toNumber(patched.unitPrice);
+
+          const idx = nextLines.findIndex((x) => x.id === existing.id);
+          if (idx >= 0) nextLines[idx] = patched;
+        } else {
+          // CREATE in bozza (anche restore di una riga cancellata che aveva un id Aedera)
+          nextLines.push(imported);
+        }
+      }
+
+      setLines(nextLines);
+      setImportPreview(null);
+    } catch (e: any) {
+      console.error(e);
+      setErr(e?.message ?? "Errore durante l'applicazione import (bozza).");
+    } finally {
+      setImporting(false);
+    }
+  };
+
 
   useEffect(() => {
     if (!projectId) return;
@@ -389,41 +811,132 @@ export const GareView: React.FC = () => {
     );
   };
 
+
   const onDeleteLine = async (lineId: string) => {
-    if (!selectedVersionId) return;
-    if (!canEdit) return;
+    if (!selectedVersionId || !canEdit) return;
 
     const line = lines.find((x) => x.id === lineId);
     if (!line) return;
 
     const label = (line.description ?? line.tariffaCodice ?? "riga").toString();
-    const ok = window.confirm(`Eliminare questa riga?\n\n${label}`);
+    const ok = window.confirm(`Eliminare questa riga (in bozza)?\n\n${label}`);
     if (!ok) return;
 
-    // Caso 1: riga non salvata (new_) => rimuovi localmente
+    const isGroup = line.rowType === "GROUP";
+
+    // new_ => rimuovila localmente (non ha senso tenerla “deleted”)
     if (lineId.startsWith("new_")) {
       setLines((prev) => {
-        // 1) rimuovi la riga
         const removed = prev.filter((x) => x.id !== lineId);
-        // 2) se era un gruppo, stacca i figli che puntavano a lui
-        return removed.map((x) => {
-          if (x.parentLineId === lineId) {
-            return { ...x, parentLineId: null, _dirty: true };
-          }
-          return x;
-        });
+        return isGroup
+          ? removed.map((x) => (x.parentLineId === lineId ? { ...x, parentLineId: null, _dirty: true } : x))
+          : removed;
       });
       return;
     }
 
-    // Caso 2: riga salvata => server + reload
-    try {
-      await deleteScenarioLine(projectId, lineId);
-      await loadLines(projectId, selectedVersionId);
-    } catch (e) {
-      console.error(e);
-      setErr("Errore durante l'eliminazione della riga.");
-    }
+    // id reale => marca deleted, e se è un gruppo stacca i figli ma ricordati il parent precedente
+    setLines((prev) =>
+      prev.map((x) => {
+        if (x.id === lineId) return { ...x, _deleted: true, _dirty: true };
+
+        if (isGroup && x.parentLineId === lineId) {
+          return { ...x, _prevParentLineId: lineId, parentLineId: null, _dirty: true };
+        }
+
+        return x;
+      }),
+    );
+  };
+
+  const onRestoreLine = (lineId: string) => {
+    setLines((prev) => {
+      const isGroup = prev.find((x) => x.id === lineId)?.rowType === "GROUP";
+
+      return prev.map((x) => {
+        // ripristina la riga
+        if (x.id === lineId) return { ...x, _deleted: false, _dirty: true };
+
+        // se ripristino un gruppo, riattacco i figli che avevamo staccato
+        if (isGroup && x._prevParentLineId === lineId) {
+          return { ...x, parentLineId: lineId, _prevParentLineId: null, _dirty: true };
+        }
+
+        return x;
+      });
+    });
+  };
+
+
+  const exportCsv = () => {
+    if (!selectedVersionId) return;
+
+    // esportiamo TUTTE le righe (anche collassate): quindi usiamo `lines`, non `flattenedRows`
+    // ordina in modo stabile come listLines
+    const sorted = lines
+      .slice()
+      .sort((a, b) => (a.sortIndex ?? 0) - (b.sortIndex ?? 0));
+
+    const wbsCols = requiredWbsKeys.slice(); // es: ["WBS0","WBS4","WBS6"]
+    const headers = [
+      "id",
+      "rowType",
+      "sortIndex",
+      "parentLineId",
+      "groupLabel",
+      ...wbsCols,
+      "tariffaCodice",
+      "description",
+      "uom",
+      "qty",
+      "unitPrice",
+      "amount",
+      "qtySource",
+      "marginPct",
+      "pacchettoCodice",
+      "materialeCodice",
+      "fornitoreId",
+    ];
+
+    const byId = new Map(sorted.map((l) => [l.id, l] as const));
+
+    const groupLabelOf = (parentId: string | null | undefined) => {
+      if (!parentId) return "";
+      const g = byId.get(parentId);
+      if (!g) return "";
+      const t = (g.tariffaCodice ?? "").trim();
+      const d = (g.description ?? "").trim();
+      return `${t || "—"} · ${d || "Gruppo"}`;
+    };
+
+    const rows = sorted.map((l) => {
+      const wbs = (l.wbs ?? {}) as Record<string, string>;
+      return [
+        l.id,
+        l.rowType,
+        String(l.sortIndex ?? 0),
+        l.parentLineId ?? "",
+        groupLabelOf(l.parentLineId),
+        ...wbsCols.map((k) => wbs[k] ?? ""),
+        l.tariffaCodice ?? "",
+        l.description ?? "",
+        l.uom ?? "",
+        String(l.qty ?? 0),
+        String(l.unitPrice ?? 0),
+        String(l.amount ?? 0),
+        l.qtySource ?? "",
+        l.marginPct == null ? "" : String(l.marginPct),
+        l.pacchettoCodice ?? "",
+        l.materialeCodice ?? "",
+        l.fornitoreId ?? "",
+      ].map(csvEscape).join(";");
+    });
+
+    const csv = "\uFEFF" + [headers.map(csvEscape).join(";"), ...rows].join("\r\n");
+
+    const verNo = selectedVersion?.versionNo ?? "x";
+    const file = `aedera_${projectId}_GARA_v${verNo}.csv`;
+    downloadTextFile(file, csv);
   };
 
   const discardChanges = async () => {
@@ -437,42 +950,46 @@ export const GareView: React.FC = () => {
   };
 
   const save = async () => {
-    if (!selectedVersionId) return;
-    if (!canEdit) return;
-    if (saving) return;
+    if (!selectedVersionId || !canEdit || saving) return;
 
-    const dirty = lines.filter((l) => l._dirty || l._isNew);
-    if (dirty.length === 0) return;
+    const toDelete = lines.filter((l) => l._deleted && !l.id.startsWith("new_"));
+    const dirty = lines.filter((l) => (l._dirty || l._isNew) && !l._deleted);
+
+    if (toDelete.length === 0 && dirty.length === 0) return;
 
     setSaving(true);
     setErr(null);
     try {
-      const items = dirty.map((l) => ({
-        // IMPORTANTISSIMO: manda sempre l'id (anche se è "new_xxx")
-        id: l.id,
+      // 1) delete reali
+      for (const d of toDelete) {
+        await deleteScenarioLine(projectId, d.id);
+      }
 
-        wbs: l.wbs ?? {},
-        tariffaCodice: String(l.tariffaCodice ?? "").trim(),
-        description: l.description ?? null,
-        uom: l.uom ?? null,
+      // 2) upsert (solo non-deleted)
+      if (dirty.length) {
+        const items = dirty.map((l) => ({
+          id: l.id, // sempre
+          wbs: l.wbs ?? {},
+          tariffaCodice: String(l.tariffaCodice ?? "").trim(),
+          description: l.description ?? null,
+          uom: l.uom ?? null,
+          qty: toNumber(l.qty),
+          unitPrice: toNumber(l.unitPrice),
+          rowType: l.rowType,
+          sortIndex: typeof l.sortIndex === "number" ? l.sortIndex : 0,
+          parentLineId: l.parentLineId ?? null,
+          qtyModelSuggested: l.qtyModelSuggested ?? null,
+          qtySource: l.qtySource,
+          marginPct: l.marginPct ?? null,
+          pacchettoCodice: l.pacchettoCodice ?? null,
+          materialeCodice: l.materialeCodice ?? null,
+          fornitoreId: l.fornitoreId ?? null,
+        }));
 
-        qty: toNumber(l.qty),
-        unitPrice: toNumber(l.unitPrice),
+        await bulkUpsertScenarioLines(projectId, { versionId: selectedVersionId, items });
+      }
 
-        rowType: l.rowType,
-        sortIndex: typeof l.sortIndex === "number" ? l.sortIndex : 0,
-        parentLineId: l.parentLineId ?? null,
-
-        qtyModelSuggested: l.qtyModelSuggested ?? null,
-        qtySource: l.qtySource,
-        marginPct: l.marginPct ?? null,
-
-        pacchettoCodice: l.pacchettoCodice ?? null,
-        materialeCodice: l.materialeCodice ?? null,
-        fornitoreId: l.fornitoreId ?? null,
-      }));
-
-      await bulkUpsertScenarioLines(projectId, { versionId: selectedVersionId, items });
+      // 3) reload pulito
       await loadLines(projectId, selectedVersionId);
     } catch (e: any) {
       console.error(e);
@@ -599,6 +1116,15 @@ export const GareView: React.FC = () => {
 
           <select
             className="text-xs rounded border border-slate-200 px-2 py-1 bg-white"
+            value={sortMode}
+            onChange={(e) => setSortMode(e.target.value as any)}
+          >
+            <option value="TARIFFA">Ordina per tariffa</option>
+            <option value="SORTINDEX">Ordine manuale</option>
+          </select>
+
+          <select
+            className="text-xs rounded border border-slate-200 px-2 py-1 bg-white"
             value={selectedVersionId ?? ""}
             onChange={(e) => void onSelectVersion(e.target.value)}
             disabled={loading || versions.length === 0}
@@ -637,6 +1163,52 @@ export const GareView: React.FC = () => {
           ) : null}
 
           <div className="flex-1" />
+
+          <label className="px-2 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50 text-xs cursor-pointer">
+            Import CSV
+            <input
+              type="file"
+              accept=".csv,text/csv"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void onPickCsv(f);
+                e.currentTarget.value = "";
+              }}
+              disabled={!selectedVersionId || !canEdit || loading}
+            />
+          </label>
+
+          {importPreview ? (
+            <>
+              <button
+                type="button"
+                className="px-2 py-1 rounded border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-xs text-emerald-700"
+                onClick={() => void applyImport()}
+                disabled={importing || !canEdit}
+              >
+                Applica import
+              </button>
+              <button
+                type="button"
+                className="px-2 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50 text-xs"
+                onClick={() => setImportPreview(null)}
+                disabled={importing}
+              >
+                Chiudi preview
+              </button>
+            </>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={exportCsv}
+            disabled={!selectedVersionId || loading}
+            className="px-2 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50 text-xs"
+            title="Esporta tutte le righe in CSV"
+          >
+            Export CSV
+          </button>
 
           <button
             type="button"
@@ -737,6 +1309,58 @@ export const GareView: React.FC = () => {
         </div>
       </div>
 
+      {importPreview ? (
+        <div className="rounded-xl border border-slate-200 bg-white p-3">
+          <div className="flex items-center justify-between">
+            <div className="text-xs text-slate-700">
+              Preview import · righe: <b>{importPreview.stats.total}</b> · gruppi: <b>{importPreview.stats.groups}</b> · linee:{" "}
+              <b>{importPreview.stats.lines}</b>
+              {importPreview.stats.errors ? (
+                <span className="ml-2 text-rose-700">· errori: <b>{importPreview.stats.errors}</b></span>
+              ) : null}
+            </div>
+          </div>
+
+          {importPreview.errors.length ? (
+            <div className="mt-2 rounded border border-rose-200 bg-rose-50 p-2 text-[11px] text-rose-700">
+              {importPreview.errors.slice(0, 8).map((x, i) => (
+                <div key={i}>• {x}</div>
+              ))}
+              {importPreview.errors.length > 8 ? <div>…</div> : null}
+            </div>
+          ) : null}
+
+          <div className="mt-2 max-h-[240px] overflow-auto border border-slate-200 rounded">
+            <table className="w-full text-[11px]">
+              <thead className="sticky top-0 bg-white">
+                <tr className="border-b border-slate-200">
+                  {importPreview.headers.slice(0, 10).map((h) => (
+                    <th key={h} className="text-left px-2 py-1 font-semibold text-slate-600 whitespace-nowrap">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {importPreview.rows.slice(0, 30).map((r, idx) => (
+                  <tr key={idx} className="border-b border-slate-100">
+                    {importPreview.headers.slice(0, 10).map((h) => (
+                      <td key={h} className="px-2 py-1 whitespace-nowrap">
+                        {String(r[h] ?? "")}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="mt-2 text-[11px] text-slate-500">
+            Mostro solo le prime 10 colonne e le prime 30 righe.
+          </div>
+        </div>
+      ) : null}
+
       {/* Tabella righe */}
       <div className="flex-1 min-h-0 rounded-xl border border-slate-200 bg-white overflow-auto">
         {!selectedVersionId ? (
@@ -771,6 +1395,7 @@ export const GareView: React.FC = () => {
                 const hasChildren = isGroup ? ((childrenByParentId[l.id]?.length ?? 0) > 0) : false;
                 const indentPx = 12 * depth;
                 const rowMuted = isLocked ? "opacity-80" : "";
+                const isDeleted = !!l._deleted;
                 return (
                   <tr
                     key={l.id}
@@ -778,6 +1403,7 @@ export const GareView: React.FC = () => {
                       "border-b border-slate-100",
                       rowMuted,
                       isGroup ? "bg-slate-50" : "",
+                      isDeleted ? "bg-rose-50 opacity-90" : "",
                     ].join(" ")}
                   >
                     {requiredWbsKeys.map((k) => (
@@ -811,11 +1437,18 @@ export const GareView: React.FC = () => {
                           <span className="w-6" />
                         )}
 
+                        {isDeleted ? (
+                          <span className="ml-2 text-[10px] px-2 py-0.5 rounded border border-rose-200 bg-rose-100 text-rose-700">
+                            ELIMINATA (bozza)
+                          </span>
+                        ) : null}
+
                         <input
                           className={[
                             "rounded border px-2 py-1",
                             isGroup ? "w-[120px] font-semibold" : "w-[120px]",
                             isGroup ? "border-slate-300 bg-slate-50" : "border-slate-200",
+                            isDeleted ? "line-through text-rose-700" : "",
                           ].join(" ")}
                           value={l.tariffaCodice ?? ""}
                           onChange={(e) => updateLine(l.id, { tariffaCodice: e.target.value })}
@@ -827,35 +1460,40 @@ export const GareView: React.FC = () => {
 
                     <td className="px-2 py-1 align-top">
                       <input
-                        className="w-[420px] rounded border border-slate-200 px-2 py-1"
+                        className={[
+                          "w-[420px] rounded border border-slate-200 px-2 py-1",
+                          isDeleted ? "line-through text-rose-700" : "",
+                        ].join(" ")}
                         value={l.description ?? ""}
                         onChange={(e) => updateLine(l.id, { description: e.target.value })}
-                        disabled={!canEdit}
+                        disabled={!canEdit || isDeleted}
                         placeholder="Descrizione"
                       />
                     </td>
 
                     <td className="px-2 py-1 align-top">
-                      {isGroup ? (
-                        <span className="text-[11px] text-slate-400">—</span>
-                      ) : (
-                        <select
-                          className="w-[220px] rounded border border-slate-200 px-2 py-1 bg-white"
-                          value={l.parentLineId ?? ""}
-                          onChange={(e) => updateLine(l.id, { parentLineId: e.target.value || null })}
-                          disabled={!canEdit}
-                        >
-                          <option value="">(Nessun gruppo)</option>
-                          {groupOptions
-                            // evita che una riga possa essere figlia di se stessa (non dovrebbe succedere per LINE, ma safe)
-                            .filter((g) => g.id !== l.id)
-                            .map((g) => (
-                              <option key={g.id} value={g.id}>
-                                {g.label}
-                              </option>
-                            ))}
-                        </select>
-                      )}
+                      <select
+                        className="w-[220px] rounded border border-slate-200 px-2 py-1 bg-white"
+                        value={l.parentLineId ?? ""}
+                        onChange={(e) => updateLine(l.id, { parentLineId: e.target.value || null })}
+                        disabled={!canEdit || isDeleted}
+                      >
+                        <option value="">{isGroup ? "(Root)" : "(Nessun gruppo)"}</option>
+
+                        {groupOptions
+                          .filter((g) => g.id !== l.id) // no self
+                          .filter((g) => {
+                            // se sto scegliendo parent per un GROUP, evita scegliere un discendente
+                            if (!isGroup) return true;
+                            const desc = descendantsOf.get(l.id);
+                            return !desc?.has(g.id);
+                          })
+                          .map((g) => (
+                            <option key={g.id} value={g.id}>
+                              {g.label}
+                            </option>
+                          ))}
+                      </select>
                     </td>
 
                     <td className="px-2 py-1 align-top">
@@ -891,15 +1529,27 @@ export const GareView: React.FC = () => {
                     </td>
 
                     <td className="px-2 py-1 align-top text-center">
-                      <button
-                        type="button"
-                        className="px-2 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50 text-xs"
-                        onClick={() => void onDeleteLine(l.id)}
-                        disabled={!canEdit}
-                        title="Elimina riga"
-                      >
-                        🗑️
-                      </button>
+                      {l._deleted ? (
+                        <button
+                          type="button"
+                          className="px-2 py-1 rounded border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-xs text-emerald-700"
+                          onClick={() => onRestoreLine(l.id)}
+                          disabled={!canEdit}
+                          title="Ripristina (bozza)"
+                        >
+                          ↩︎
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="px-2 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50 text-xs"
+                          onClick={() => void onDeleteLine(l.id)}
+                          disabled={!canEdit}
+                          title="Elimina (bozza)"
+                        >
+                          🗑️
+                        </button>
+                      )}
                     </td>
                   </tr>
                 );

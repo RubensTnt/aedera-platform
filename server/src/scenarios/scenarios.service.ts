@@ -259,12 +259,36 @@ export class ScenariosService {
 
     const requiredKeys = await this.getRequiredWbsKeys(projectId);
 
+    // 0) quali id "reali" arrivano dalla request?
+    const incomingRealIds = (items ?? [])
+      .map((x: any) => String(x?.id ?? "").trim())
+      .filter((id) => id && !id.startsWith("new_"));
+
+    const incomingRealIdSet = new Set(incomingRealIds);
+
+    // 1) quali di questi esistono già a DB?
+    const existingRows = incomingRealIds.length
+      ? await this.prisma.boqLine.findMany({
+          where: { projectId, versionId, id: { in: incomingRealIds } },
+          select: { id: true },
+        })
+      : [];
+
+    const existingIdSet = new Set(existingRows.map((r) => r.id));
+
+    // 2) prepara le liste di create e update
     // split create/update: per update richiediamo id
     type CreateRow = Prisma.BoqLineCreateInput & {
       __tempId: string;
       __parentTempId?: string | null;
+      __parentRealId?: string | null;
     };
-    type UpdateRow = { id: string; data: Prisma.BoqLineUpdateInput };
+
+    type UpdateRow = {
+      id: string;
+      data: Prisma.BoqLineUpdateInput;
+      __parentTempId?: string | null;
+    };
 
     const toCreate: CreateRow[] = [];
     const toUpdate: UpdateRow[] = [];
@@ -334,25 +358,50 @@ export class ScenariosService {
         fornitoreId: it?.fornitoreId ?? null,
       };
 
-      if (it?.id && !String(it.id).startsWith("new_")) {
+      const idRaw = String(it?.id ?? "").trim();
+      const isRealId = !!idRaw && !idRaw.startsWith("new_");
+      const existsInDb = isRealId && existingIdSet.has(idRaw);
+
+      if (existsInDb) {
         const data: Prisma.BoqLineUpdateInput = {
           ...common,
-          parentLine: parentRealId ? { connect: { id: parentRealId } } : { disconnect: true },
+          // se parent è reale -> connect
+          ...(parentRealId ? { parentLine: { connect: { id: parentRealId } } } : { parentLine: { disconnect: true } }),
         };
-        toUpdate.push({ id: String(it.id), data });
+
+        toUpdate.push({
+          id: String(it.id),
+          data,
+          __parentTempId: parentTempId, // <--- AGGIUNGI QUESTO
+        });
       } else {
-        // create
+        // CREATE (anche se idRaw è un id “reale” ma non esiste più)
+        // CREATE
         const tempId =
           typeof it?.id === "string" && it.id.startsWith("new_")
             ? it.id
             : `new_${Math.random().toString(36).slice(2)}`;
 
+        // parent real id (non-new_) può essere:
+        // - già presente a DB (ok connect subito)
+        // - oppure incluso nell’import ma attualmente non esiste (va deferito)
+        const parentRealIdMustBeDeferred =
+          !!parentRealId && !existingIdSet.has(parentRealId) && incomingRealIdSet.has(parentRealId);
+
         toCreate.push({
           __tempId: tempId,
           __parentTempId: parentTempId,
+          __parentRealId: parentRealIdMustBeDeferred ? parentRealId : null,
+
+          // se l’import contiene un id reale, lo preserviamo
+          ...(isRealId ? { id: idRaw } : {}),
+
           project: { connect: { id: projectId } },
           version: { connect: { id: versionId } },
           ...common,
+
+          // connect parent subito solo se esiste già a DB
+          ...(parentRealId && existingIdSet.has(parentRealId) ? { parentLine: { connect: { id: parentRealId } } } : {}),
         });
       }
     }
@@ -360,13 +409,15 @@ export class ScenariosService {
     // transazione: update uno-a-uno + createMany
     await this.prisma.$transaction(async (tx) => {
       const tempToReal = new Map<string, string>();
-      const pendingFix: Array<{ childRealId: string; parentTempId: string }> = [];
+      const pendingFixTemp: Array<{ childRealId: string; parentTempId: string }> = [];
+      const pendingFixReal: Array<{ childRealId: string; parentRealId: string }> = [];
 
+      // 1) CREATE (prima, così i parent "reali" importati vengono creati e poi gli update possono connettersi)
       for (const c of toCreate) {
-        const { __tempId, __parentTempId, ...data } = c as any;
+        const { __tempId, __parentTempId, __parentRealId, ...data } = c as any;
 
-        // NB: se parent è temp, nel create non lo settiamo
-        if (__parentTempId) {
+        // se parent è temp o real-deferred, nel create non lo settiamo
+        if (__parentTempId || __parentRealId) {
           delete data.parentLine;
         }
 
@@ -376,25 +427,43 @@ export class ScenariosService {
 
         tempToReal.set(__tempId, created.id);
 
-        if (__parentTempId) {
-          pendingFix.push({ childRealId: created.id, parentTempId: __parentTempId });
+        if (__parentTempId) pendingFixTemp.push({ childRealId: created.id, parentTempId: __parentTempId });
+        if (__parentRealId) pendingFixReal.push({ childRealId: created.id, parentRealId: __parentRealId });
+      }
+
+      // 2) UPDATE (manca nel tuo file attuale!)
+      for (const u of toUpdate) {
+        await tx.boqLine.update({
+          where: { id: u.id },
+          data: u.data,
+        });
+
+        // Se l'UPDATE puntava a un parent "new_", lo risolviamo dopo usando tempToReal
+        if (u.__parentTempId) {
+          pendingFixTemp.push({ childRealId: u.id, parentTempId: u.__parentTempId });
         }
       }
 
-      for (const u of toUpdate) {
-        await tx.boqLine.update({ where: { id: u.id }, data: u.data });
-      }
-
-      for (const p of pendingFix) {
+      // 3) FIX dei parent "temp" (new_...)
+      for (const p of pendingFixTemp) {
         const realParentId = tempToReal.get(p.parentTempId);
         if (!realParentId) continue;
+
         await tx.boqLine.update({
           where: { id: p.childRealId },
           data: { parentLine: { connect: { id: realParentId } } },
         });
       }
-    });
 
+      // 4) FIX dei parent "reali" deferred (cuid importato che non esisteva e viene creato nello stesso import)
+      for (const p of pendingFixReal) {
+        await tx.boqLine.update({
+          where: { id: p.childRealId },
+          data: { parentLine: { connect: { id: p.parentRealId } } },
+        });
+      }
+    });
+    
     return { created: toCreate.length, updated: toUpdate.length };
   }
 
